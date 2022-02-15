@@ -6,13 +6,13 @@ import { parse } from "cookie";
 import nodemailer from "nodemailer";
 import smtpTransport from "nodemailer-smtp-transport";
 import * as dotenv from 'dotenv';
-import * as admin from 'firebase-admin';
+// import * as admin from 'firebase-admin';
 import crypto from "crypto";
 import redis from "./utils/redis";
 
-admin.initializeApp({
-  credential: admin.credential.applicationDefault()
-});
+// admin.initializeApp({
+//   credential: admin.credential.applicationDefault()
+// });
 
 const postalService = nodemailer.createTransport(smtpTransport({
   service: 'gmail',
@@ -235,50 +235,50 @@ const port = process.env.WEBHOOK_PORT || 4000;
       }
     });
 
-    server.post(`/trigger/notifications/subscribe/:topic`, async (req, res) => {
-      try {
-        const { registrationToken, userId } = req.body;
-        console.log("subscription request received");
-        console.log("registration token: " + registrationToken)
-        console.log("userId: " + userId)
-        console.log("topic: " + req.params.topic)
-        console.log(req.body)
-        const result = await admin.messaging().subscribeToTopic(registrationToken, req.params.topic);
-        if (result.errors.length != 0) {
-          console.log(result.errors[0].error)
-        }
-        res.json({
-          status: 'success',
-          ...result
-        });
-      } catch (error) {
-        console.error(`[✗] Error while subscribing notification for client; reason: ${error.message}`)
-        res.status(500).json({
-          status: 'error',
-          error: error.message
-        });
-      }
-    })
+    // server.post(`/trigger/notifications/subscribe/:topic`, async (req, res) => {
+    //   try {
+    //     const { registrationToken, userId } = req.body;
+    //     console.log("subscription request received");
+    //     console.log("registration token: " + registrationToken)
+    //     console.log("userId: " + userId)
+    //     console.log("topic: " + req.params.topic)
+    //     console.log(req.body)
+    //     const result = await admin.messaging().subscribeToTopic(registrationToken, req.params.topic);
+    //     if (result.errors.length != 0) {
+    //       console.log(result.errors[0].error)
+    //     }
+    //     res.json({
+    //       status: 'success',
+    //       ...result
+    //     });
+    //   } catch (error) {
+    //     console.error(`[✗] Error while subscribing notification for client; reason: ${error.message}`)
+    //     res.status(500).json({
+    //       status: 'error',
+    //       error: error.message
+    //     });
+    //   }
+    // })
 
-    server.delete(`/trigger/notifications/unsubscribe/:topic`, async (req, res) => {
-      try {
-        const { registrationToken } = req.body;
-        const result = await admin.messaging().unsubscribeFromTopic(registrationToken, req.params.topic);
-        res.json({
-          status: 'success',
-          ...result
-        });
-        res.json({
-          status: 'success'
-        });
-      } catch (error) {
-        console.error(`[✗] Error while unsubscribing notification for client; reason: ${error.message}`)
-        res.status(500).json({
-          status: 'error',
-          error: error.message
-        });
-      }
-    });
+    // server.delete(`/trigger/notifications/unsubscribe/:topic`, async (req, res) => {
+    //   try {
+    //     const { registrationToken } = req.body;
+    //     const result = await admin.messaging().unsubscribeFromTopic(registrationToken, req.params.topic);
+    //     res.json({
+    //       status: 'success',
+    //       ...result
+    //     });
+    //     res.json({
+    //       status: 'success'
+    //     });
+    //   } catch (error) {
+    //     console.error(`[✗] Error while unsubscribing notification for client; reason: ${error.message}`)
+    //     res.status(500).json({
+    //       status: 'error',
+    //       error: error.message
+    //     });
+    //   }
+    // });
 
     server.post(`/trigger/scheduleGrading`, async (req, res) => {
       try {

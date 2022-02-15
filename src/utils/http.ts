@@ -1,7 +1,6 @@
 import axios from "axios";
 
-// const endpoint = 'https://api.zinc.cse.ust.hk/v1';
-const endpoint = 'https://api.oap.ust.dev/v1'
+const endpoint = `http://${process.env.HASURA_ADDR}/v1`
 const httpClient = axios.create({
   baseURL: endpoint,
   headers: {
