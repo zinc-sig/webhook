@@ -1,4 +1,4 @@
-import { moveSync, readFileSync, outputFileSync, readdirSync, lstatSync, mkdirSync, renameSync } from "fs-extra";
+import { moveSync, readFileSync, outputFileSync, readdirSync, lstatSync, mkdirSync } from "fs-extra";
 import { exec } from 'child_process';
 import { createExtractorFromData } from "node-unrar-js";
 import httpClient from "../utils/http";
@@ -42,7 +42,8 @@ function extractRAR(submission: any) {
       }
     }
     const paths = readdirSync(temporaryResolvePath);
-    moveSync(paths.length===1 && lstatSync(`${temporaryResolvePath}/${paths[0]}`).isDirectory()?`${temporaryResolvePath}/${paths[0]}`:temporaryResolvePath, `${mountPath}/extracted/${submission.id}`);
+    const sourcePath = paths.length===1 && lstatSync(`${temporaryResolvePath}/${paths[0]}`).isDirectory()?`${temporaryResolvePath}/${paths[0]}`:temporaryResolvePath;
+    moveSync(sourcePath, `${mountPath}/extracted/${submission.id}`);
   } catch (error) {
     console.error(`[✗] Error occurred when deflating RAR archive; Reason: ${error.message}`);
     throw error
@@ -66,8 +67,8 @@ async function extractZip(submission: any) {
     });
     const files = readdirSync(temporaryResolvePath);
     if(files.length >= 1){
-      const srcPath = files.length===1&&lstatSync(`${temporaryResolvePath}/${files[0]}`).isDirectory()?`${temporaryResolvePath}/${files[0]}`:temporaryResolvePath;
-      renameSync(srcPath, extractToPath)
+      const sourcePath = files.length===1&&lstatSync(`${temporaryResolvePath}/${files[0]}`).isDirectory()?`${temporaryResolvePath}/${files[0]}`:temporaryResolvePath;
+      moveSync(sourcePath, extractToPath)
     } else {
       throw new Error("empty directory")
     }
