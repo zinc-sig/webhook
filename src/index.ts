@@ -180,11 +180,11 @@ const port = process.env.WEBHOOK_PORT || 4000;
             isTest,
             initiatedBy: null
           })
-          // const clients = await redis.rpush(`zinc_queue:grader`, JSON.stringify({
-          //   job: 'gradingTask',
-          //   payload
-          // }));
-          // assert(clients!==0, 'Job signal receiver assertion failed');
+          const clients = await redis.rpush(`zinc_queue:grader`, JSON.stringify({
+            job: 'gradingTask',
+            payload
+          }));
+          assert(clients!==0, 'Job signal receiver assertion failed');
           // client.gradingTask(payload, function(err:any ,message: string){
           //   if (err) {
           //     console.log(err)
