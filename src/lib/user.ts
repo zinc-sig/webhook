@@ -18,7 +18,6 @@ function getKey(header: any, callback: (...args: any) => void) {
 
 export async function verifySignature(idToken: string, audience: string): Promise<any> {
   try {
-    console.log(client)
     const { sub, name } = await new Promise((resolve, reject) => {
       jwt.verify(
         idToken,
