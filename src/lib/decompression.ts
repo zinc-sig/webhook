@@ -1,6 +1,5 @@
 import { moveSync, readFileSync, outputFileSync, readdirSync, lstatSync, mkdirSync } from "fs-extra";
 import { exec } from 'child_process';
-import { createExtractorFromData } from "node-unrar-js";
 import httpClient from "../utils/http";
 import { GET_GRADING_POLICY, UPDATE_DECOMPRESSION_RESULT_FOR_SUBMISSION } from "../utils/queries";
 
@@ -29,21 +28,21 @@ export async function decompressSubmission(submission: any) {
 }
 function extractRAR(submission: any) {
   try {
-    const rawFileBuffer = Uint8Array.from(readFileSync(`${mountPath}/${submission.stored_name}`)).buffer;
-    const extractor = createExtractorFromData(rawFileBuffer);
-    const contents = extractor.extractAll();
-    const [_, { files }] = contents
-    const temporaryResolvePath = `/tmp/${submission.id}`;
-    for(const file of files) {
-      const { fileHeader, extract } = file;
-      if(!fileHeader.flags.directory) {
-        const [_, buffer] = extract
-        outputFileSync(`${temporaryResolvePath}/${fileHeader.name}`, buffer);
-      }
-    }
-    const paths = readdirSync(temporaryResolvePath);
-    const sourcePath = paths.length===1 && lstatSync(`${temporaryResolvePath}/${paths[0]}`).isDirectory()?`${temporaryResolvePath}/${paths[0]}`:temporaryResolvePath;
-    moveSync(sourcePath, `${mountPath}/extracted/${submission.id}`);
+    // const rawFileBuffer = Uint8Array.from(readFileSync(`${mountPath}/${submission.stored_name}`)).buffer;
+    // const extractor = createExtractorFromData(rawFileBuffer);
+    // const contents = extractor.extractAll();
+    // const [_, { files }] = contents
+    // const temporaryResolvePath = `/tmp/${submission.id}`;
+    // for(const file of files) {
+    //   const { fileHeader, extract } = file;
+    //   if(!fileHeader.flags.directory) {
+    //     const [_, buffer] = extract
+    //     outputFileSync(`${temporaryResolvePath}/${fileHeader.name}`, buffer);
+    //   }
+    // }
+    // const paths = readdirSync(temporaryResolvePath);
+    // const sourcePath = paths.length===1 && lstatSync(`${temporaryResolvePath}/${paths[0]}`).isDirectory()?`${temporaryResolvePath}/${paths[0]}`:temporaryResolvePath;
+    // moveSync(sourcePath, `${mountPath}/extracted/${submission.id}`);
   } catch (error) {
     console.error(`[✗] Error occurred when deflating RAR archive; Reason: ${error.message}`);
     throw error
