@@ -149,7 +149,6 @@ export async function getGradingSubmissions(assignmentConfigId: number) {
         }
       }
     });
-    console.log(data);
     const { stopCollectionAt, submissions } = data.data.assignmentConfig;
     return {
       stopCollectionAt,

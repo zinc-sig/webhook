@@ -14,9 +14,9 @@ export async function decompressSubmission(submission: any) {
       case 'zip':
         await extractZip(submission);
         break;
-      case 'rar':
-        extractRAR(submission);
-        break;
+      // case 'rar':
+      //   extractRAR(submission);
+      //   break;
       default:
         throw new Error('Unsupported archive format')
     }

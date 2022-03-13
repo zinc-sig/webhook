@@ -12,7 +12,6 @@ export async function getNotiRecevier(assignmentConfigId: number){
             }
           }
         });
-        console.log(data);
         const ids = data.section_user.map((user:any)=>{return(user.user_id)})
         return ids
       } catch (error) {
