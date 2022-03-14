@@ -109,8 +109,8 @@ const port = process.env.WEBHOOK_PORT || 4000;
     // }
 
     server.post(`/identity`, async (req, res) => {
-      const cookies: any = parse(req.body.headers.Cookie)
       try {
+        const cookies: any = parse(req.body.headers.Cookie)
         if (Object.keys(cookies).length && cookies.hasOwnProperty('appSession')) {
           // const sid = cookieParser.signedCookie(req.cookies['appSession'], process.env.SESSION_SECRET);
           const sid = crypto.createHmac('sha1', process.env.SESSION_SECRET!).update(cookies['appSession']).digest().toString('base64')
