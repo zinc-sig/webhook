@@ -111,7 +111,7 @@ const port = process.env.WEBHOOK_PORT || 4000;
     server.post(`/identity`, async (req, res) => {
       try {
         if(typeof req.body.headers.Cookie !== "string") {
-          console.log(req.body.headers.Cookie)
+          console.log(`cookie is not string: ${req.body.headers.Cookie}`)
         }
         const cookies: any = parse(req.body.headers.Cookie)
         if (Object.keys(cookies).length && cookies.hasOwnProperty('appSession')) {
