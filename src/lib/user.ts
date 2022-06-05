@@ -4,7 +4,7 @@ import httpClient from "../utils/http";
 import { CREATE_USER, GET_USER, UPDATE_USERNAME , GET_USER_BY_REPORT_ID} from "../utils/queries";
 
 const client = jwksClient({
-  jwksUri: `https://cas${process.env.NODE_ENV==='production'?'':'test'}.ust.hk/cas/oidc/jwks`
+  jwksUri: `https://login.microsoftonline.com/common/discovery/v2.0/keys`
 });
 
 function getKey(header: any, callback: (...args: any) => void) {
@@ -18,12 +18,12 @@ function getKey(header: any, callback: (...args: any) => void) {
 
 export async function verifySignature(idToken: string, audience: string): Promise<any> {
   try {
-    const { sub, name } = await new Promise((resolve, reject) => {
+    const { email, name } = await new Promise((resolve, reject) => {
       jwt.verify(
         idToken,
         getKey,
         {
-          issuer: process.env.CAS_AUTH_BASE_URL,
+          issuer: `https://login.microsoftonline.com/${process.env.AAD_TENANT_ID}/v2.0`,
           audience, 
           algorithms: ["RS256"]
         },
@@ -37,9 +37,11 @@ export async function verifySignature(idToken: string, audience: string): Promis
         }
       );
     });
+    const firstName = name.substring(0, name.lastIndexOf(' '));
+    const lastName = name.substring(name.lastIndexOf(' ') + 1);
     return {
-      itsc: sub,
-      name
+      itsc: email.split('@')[0],
+      name: `${lastName}, ${firstName}`
     }
   } catch (error) {
     throw error;
