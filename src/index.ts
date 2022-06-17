@@ -120,7 +120,7 @@ const port = process.env.WEBHOOK_PORT || 4000;
           const cookie = await redis.get(sid);
           if (cookie) {
             const { data: { id_token } } = JSON.parse(cookie);
-            const { name, itsc } = await verifySignature(id_token, cookies['client'] as string);
+            const { name, itsc } = await verifySignature(id_token, cookies['client'] as string, cookies['domain'] as string);
             const { isAdmin, courses } = await getUser(itsc, name);
 
             const allowedCourses = `{${courses.map(({ course_id }: any) => course_id).join(',')}}`;
