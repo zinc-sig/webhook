@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import httpClient from "../utils/http";
 import { CREATE_USER, GET_USER, UPDATE_USERNAME , GET_USER_BY_REPORT_ID} from "../utils/queries";
 
-const allowedDomains = {
+const allowedDomains: any = {
   'connect.ust.hk': 'AAD_TENANT_ID',
   'ust.hk': 'AAD_STAFF_TENANT_ID'
 }
@@ -23,12 +23,13 @@ function getKey(header: any, callback: (...args: any) => void) {
 
 export async function verifySignature(idToken: string, audience: string, domain: string): Promise<any> {
   try {
+    const tenantId: string = process.env[allowedDomains[domain]];
     const { email, name } = await new Promise((resolve, reject) => {
       jwt.verify(
         idToken,
         getKey,
         {
-          issuer: `https://login.microsoftonline.com/${process.env[allowedDomains[domain]]}/v2.0`,
+          issuer: `https://login.microsoftonline.com/${tenantId}/v2.0`,
           audience, 
           algorithms: ["RS256"]
         },
