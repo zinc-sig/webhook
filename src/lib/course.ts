@@ -67,8 +67,8 @@ async function createSemesterIfNotExist(id: number): Promise<void>{
 
 async function addCourse(code: string, semesterId: number) {
   try {
-    const { data: { name }} = await axios({
-      url: `https://course-quota.now.sh/api/subject?department=COMP&code=${code}`
+    const { data: { title }} = await axios({
+      url: `https://api.contrib.ust.dev/v1/courses/${code}`
     });
     const { data: { data }} = await httpClient.request({
       url: '/graphql',
@@ -92,7 +92,7 @@ async function addCourse(code: string, semesterId: number) {
         variables: {
           code,
           semesterId,
-          name
+          name: title
         }
       }
     });
