@@ -43,8 +43,8 @@ export async function verifySignature(idToken: string, audience: string, domain:
         }
       );
     });
-    const firstName = name.split(' ').filter((segment) => !/^[A-Z]+$/.test(segment)).join(' ');
-    const lastName = name.split(' ').filter((segment) => /^[A-Z]+$/.test(segment)).join(' ');
+    const firstName = name.split(' ').filter((segment: string) => !/^[A-Z]+$/.test(segment)).join(' ');
+    const lastName = name.split(' ').filter((segment: string) => /^[A-Z]+$/.test(segment)).join(' ');
     return {
       itsc: email.split('@')[0],
       name: `${lastName} ${firstName}`
