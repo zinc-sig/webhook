@@ -43,11 +43,11 @@ export async function verifySignature(idToken: string, audience: string, domain:
         }
       );
     });
-    const firstName = name.substring(0, name.lastIndexOf(' '));
-    const lastName = name.substring(name.lastIndexOf(' ') + 1);
+    const firstName = name.split(' ').filter((segment) => !/^[A-Z]+$/.test(segment)).join(' ');
+    const lastName = name.split(' ').filter((segment) => /^[A-Z]+$/.test(segment)).join(' ');
     return {
       itsc: email.split('@')[0],
-      name: `${lastName}, ${firstName}`
+      name: `${lastName} ${firstName}`
     }
   } catch (error) {
     throw error;
