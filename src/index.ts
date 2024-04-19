@@ -6,13 +6,8 @@ import { parse } from "cookie";
 import nodemailer from "nodemailer";
 import smtpTransport from "nodemailer-smtp-transport";
 import * as dotenv from 'dotenv';
-// import * as admin from 'firebase-admin';
 import crypto from "crypto";
 import redis from "./utils/redis";
-
-// admin.initializeApp({
-//   credential: admin.credential.applicationDefault()
-// });
 
 const postalService = nodemailer.createTransport(smtpTransport({
   service: 'gmail',
@@ -35,87 +30,16 @@ import { scheduleGradingEvent, getGradingSubmissions, generateReportArtifacts, g
 
 const port = process.env.WEBHOOK_PORT || 4000;
 
-// import { loadPackageDefinition, credentials } from '@grpc/grpc-js';
-// import { loadSync } from '@grpc/proto-loader';
-// import { getNotiRecevier, getSubmissionUserId } from "./lib/notification";
-// import httpClient from "./utils/http";
-// var PROTO_PATH = 'proto/Zinc.proto';
-// var target = 'fakegrader:50051';
-
-// interface Noti {
-//   student: boolean,
-//   id: number,
-//   title: string,
-//   body: string
-// }
-
-// function genGRPCClient() {
-//   var packageDefinition = loadSync(
-//     PROTO_PATH,
-//     {
-//       keepCase: true,
-//       longs: String,
-//       enums: String,
-//       defaults: true,
-//       oneofs: true
-//     });
-//   var protoDescriptor = loadPackageDefinition(packageDefinition)
-//   var zinc_proto = protoDescriptor.Zinc;
-//   //@ts-ignore
-//   var client = new zinc_proto(target, credentials.createInsecure());
-//   return client
-// }
-
 (async () => {
   try {
     const server = express();
     server.use(cookieParser());
     server.use(bodyParser.json({ limit: '50mb' }));
 
-
-    // var client = genGRPCClient();
-    // var call = client.notification({});
-    // call.on('data', async function(noti : Noti){
-    //   if (!noti.student){
-    //     const ids = await getNotiRecevier(noti.id)
-    //       console.log(ids)
-    //       ids.forEach((id: number) => {
-    //         const message = {
-    //             data: {
-    //               title: noti.title,
-    //               body: noti.body,
-    //             },
-    //             topic: "i"+id+"-"+noti.id.toString()
-    //         }
-    //         console.log(message)
-    //         admin.messaging().send(message).then((response)=>{
-    //           console.log('Successfully sent message: ', response)
-    //         })
-    //         .catch((error)=>{
-    //           console.log('Error sending message: ', error)
-    //         })
-    //       });  
-    //   }
-    // })
-
-    //   function str_obj(str: string) {
-    //     var strArray = str.split('; ');
-    //     var result = new Map();
-    //     for (let i in strArray) {
-    //         const cur = str[i].split('=');
-    //         result.set(cur[0], cur[1])
-    //     }
-    //     return result;
-    // }
-
     server.post(`/identity`, async (req, res) => {
       try {
-        if(typeof req.body.headers.Cookie !== "string") {
-          console.log(`cookie is not string: ${req.body.headers.Cookie}`)
-        }
         const cookies: any = parse(req.body.headers.Cookie)
         if (Object.keys(cookies).length && cookies.hasOwnProperty('appSession')) {
-          // const sid = cookieParser.signedCookie(req.cookies['appSession'], process.env.SESSION_SECRET);
           const sid = crypto.createHmac('sha1', process.env.SESSION_SECRET!).update(cookies['appSession']).digest().toString('base64')
           const cookie = await redis.get(sid);
           if (cookie) {
@@ -131,7 +55,6 @@ const port = process.env.WEBHOOK_PORT || 4000;
               'X-Hasura-Requested-At': (new Date()).toISOString()
             }
 
-            // console.log(req.body)
             res.json(payload);
 
           } else {
@@ -188,12 +111,6 @@ const port = process.env.WEBHOOK_PORT || 4000;
             payload
           }));
           assert(clients!==0, 'Job signal receiver assertion failed');
-          // client.gradingTask(payload, function(err:any ,message: string){
-          //   if (err) {
-          //     console.log(err)
-          //   }
-          //   console.log(message)
-          // })
         }
         res.json({
           status: 'success'
@@ -210,22 +127,7 @@ const port = process.env.WEBHOOK_PORT || 4000;
       try {
         const { data } = req.body.event;
         console.log(`[!] Received post-grading report processing request for report id: ${data.new.id}`);
-        console.log(data.new)
         await generateReportArtifacts(data.new);
-        // const id = await getSubmissionUserId(data.new.submission_id)
-        // const message = {
-        //   data: {
-        //     title: "Submission Graded",
-        //     body: "submission id : " + data.new.submission_id.toString(),
-        //   },
-        //   topic: "s" + id + "-" + data.new.submission_id.toString()
-        // }
-        // admin.messaging().send(message).then((response) => {
-        //   console.log('Successfully sent message: ', response)
-        // })
-        //   .catch((error) => {
-        //     console.log('Error sending message: ', error)
-        //   })
         res.json({
           status: 'success'
         });
@@ -237,51 +139,6 @@ const port = process.env.WEBHOOK_PORT || 4000;
         });
       }
     });
-
-    // server.post(`/trigger/notifications/subscribe/:topic`, async (req, res) => {
-    //   try {
-    //     const { registrationToken, userId } = req.body;
-    //     console.log("subscription request received");
-    //     console.log("registration token: " + registrationToken)
-    //     console.log("userId: " + userId)
-    //     console.log("topic: " + req.params.topic)
-    //     console.log(req.body)
-    //     const result = await admin.messaging().subscribeToTopic(registrationToken, req.params.topic);
-    //     if (result.errors.length != 0) {
-    //       console.log(result.errors[0].error)
-    //     }
-    //     res.json({
-    //       status: 'success',
-    //       ...result
-    //     });
-    //   } catch (error) {
-    //     console.error(`[✗] Error while subscribing notification for client; reason: ${error.message}`)
-    //     res.status(500).json({
-    //       status: 'error',
-    //       error: error.message
-    //     });
-    //   }
-    // })
-
-    // server.delete(`/trigger/notifications/unsubscribe/:topic`, async (req, res) => {
-    //   try {
-    //     const { registrationToken } = req.body;
-    //     const result = await admin.messaging().unsubscribeFromTopic(registrationToken, req.params.topic);
-    //     res.json({
-    //       status: 'success',
-    //       ...result
-    //     });
-    //     res.json({
-    //       status: 'success'
-    //     });
-    //   } catch (error) {
-    //     console.error(`[✗] Error while unsubscribing notification for client; reason: ${error.message}`)
-    //     res.status(500).json({
-    //       status: 'error',
-    //       error: error.message
-    //     });
-    //   }
-    // });
 
     server.post(`/trigger/scheduleGrading`, async (req, res) => {
       try {
@@ -313,12 +170,6 @@ const port = process.env.WEBHOOK_PORT || 4000;
           isTest: false,
           initiatedBy: req.body.initiatedBy
         });
-        // client.gradingTask(payload, function(err:any ,message: string){
-        //   if (err) {
-        //     console.log(err)
-        //   }
-        //   console.log(message)
-        // })
         const clients = await redis.rpush(`zinc_queue:grader`, JSON.stringify({
           job: 'gradingTask',
           payload 
@@ -341,7 +192,6 @@ const port = process.env.WEBHOOK_PORT || 4000;
         const { assignment_config_id, stop_collection_at } = req.body.payload
         const { submissions, stopCollectionAt } = await getGradingSubmissions(assignment_config_id);
         if (stopCollectionAt === stop_collection_at) {
-          console.log('inside grading Task')
           const payload = {
             submissions: submissions.map((submission: any) => ({ ...submission, created_at: (new Date(submission.created_at)).toISOString() })),
             assignment_config_id,
@@ -353,12 +203,6 @@ const port = process.env.WEBHOOK_PORT || 4000;
             payload 
           }));
           assert(clients!==0, 'Job signal receiver assertion failed');
-          // client.gradingTask(payload, function(err:any ,message: string){
-          //   if (err) {
-          //     console.log(err)
-          //   }
-          //   console.log(message)
-          // })
         }
         res.json({
           status: 'success'
@@ -372,34 +216,13 @@ const port = process.env.WEBHOOK_PORT || 4000;
       }
     });
 
-    async function doneGradingSignalPolling() {
-      console.log(`[!] Started Polling for grading job signal`);
-      while (true) {
-        try {
-          const task = await redis.blpop('doneGrading', 0);
-          console.log(`[Done Grading] ${JSON.stringify(task)}`);
-          // const mailOptions = {
-          //   from: process.env.MAIL_AUTHOR,
-          //   to: '',
-          //   subject: '',
-          //   html: ''
-          // }
-          // postalService.sendMail(mailOptions, (err, info) => {
-          //   if(!err) {
-          //     console.log(`[!] Mail delivery in progress, ${info}`);
-          //   } else {
-          //     console.error(`[✗] Error while sending out mail for grading task completion notification`);
-          //   }
-          // });
-        } catch (error) {
-          // Redis connect could have closed. Handle those cases here.      
-          process.exit(1);
-        }
-      }
-    }
-
     server.listen(port, (err?: any) => {
       if (err) throw err;
+      setInterval(async () => {
+        const result = await redis.blpop('zinc-queue:api', 4000);
+        const payload = JSON.parse(result);
+        console.log(payload);
+      }, 3000)
       console.log(`> Ready on localhost:${port} - env ${process.env.NODE_ENV}`);
     });
   } catch (e) {
