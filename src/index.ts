@@ -291,11 +291,11 @@ const port = process.env.WEBHOOK_PORT || 4000;
 
     server.listen(port, (err?: any) => {
       if (err) throw err;
-      setInterval(async () => {
-        const [key, result] = await redis.blpop("zinc-queue:api", 4000);
-        const payload = JSON.parse(result);
-        console.log(payload);
-      }, 3000);
+      // setInterval(async () => {
+      //   const [key, result] = await redis.blpop("zinc-queue:api", 4000);
+      //   const payload = JSON.parse(result);
+      //   console.log(payload);
+      // }, 3000);
       console.log(`> Ready on localhost:${port} - env ${process.env.NODE_ENV}`);
     });
   } catch (e) {
