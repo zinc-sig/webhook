@@ -142,6 +142,7 @@ async function addSections(courseId: number, sectionNames: Array<string>) {
     return returning.reduce((acc: any, { id, name, course }: any) => {
       console.log(`[!] Added new section ${name} to course ${course.code} with id ${id}`);
       acc[name] = id;
+      return acc;
     }, {});
   } catch (error) {
     console.error(`[✗] ${error.message}`);
