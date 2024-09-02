@@ -3,22 +3,9 @@ import express from "express";
 import bodyParser, { json } from "body-parser";
 import cookieParser from "cookie-parser";
 import { parse } from "cookie";
-import nodemailer from "nodemailer";
-import smtpTransport from "nodemailer-smtp-transport";
 import * as dotenv from "dotenv";
 import crypto from "crypto";
 import redis from "./utils/redis";
-
-const postalService = nodemailer.createTransport(
-  smtpTransport({
-    service: "gmail",
-    host: "smtp.gmail.com",
-    auth: {
-      user: process.env.SMTP_USERNAME,
-      pass: process.env.SMTP_PASSWORD,
-    },
-  })
-);
 
 if (process.env.NODE_ENV !== "production") {
   dotenv.config();

@@ -174,28 +174,45 @@ async function addStudentsToCourseSection(studentUserIds: Array<any>, sectionId:
 
 export async function getStudentCourseEnrollmentMap() {
   try {
-    const { data: { data, termid, status } } = await axios({
+    const { data: { access_token }} = await axios({
       method: 'post',
-      url: process.env.CSSYSTEM_API_URL,
-      data: JSON.parse(Buffer.from(process.env.CSSYSTEM_API_SECRET_PAYLOAD, 'base64').toString())
+      url: `${process.env.ISO_API_URL}/oauth/token`,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from([process.env.ISO_API_CLIENT_ID, process.env.ISO_API_CLIENT_SECRET].join(':')).toString('base64')}`
+      },
+      data: `grant_type=password&username=${process.env.ISO_API_USERNAME}&password=${process.env.ISO_API_PASSWORD}`
     });
-    if(status===0) {
-      const records = data.split('\n').filter((line: string) => line.length>0);
-      let enrollments: any = [];
-      records.forEach((row: string) => {
-        const [ itsc, ...courseSectionMaps ] = row.split(',');
-	      for(const courseSectionMap of courseSectionMaps) {
-	        const [ course, section ] = courseSectionMap.split('-').map(str => str.toUpperCase());
-	        enrollments.push({ itsc, course, section });
-	      }
-      });
-      return {
-        enrollments,
-        semester: parseInt(termid, 10)
-      };
-    } else {
-      throw new Error('error fetching cssystem api');
-    }
+    const { data } = await axios({
+      method: 'get',
+      url: `${process.env.ISO_API_URL}/sis/class_enrl?crseCode=COMP2011|COMP2012|COMP2211`,
+      headers: {
+        'authorization': `Bearer ${access_token}`
+      }
+    })
+    console.log(data)
+    // const { data: { data, termid, status } } = await axios({
+    //   method: 'post',
+    //   url: process.env.CSSYSTEM_API_URL,
+    //   data: JSON.parse(Buffer.from(process.env.CSSYSTEM_API_SECRET_PAYLOAD, 'base64').toString())
+    // });
+    // if(status===0) {
+    //   const records = data.split('\n').filter((line: string) => line.length>0);
+    //   let enrollments: any = [];
+    //   records.forEach((row: string) => {
+    //     const [ itsc, ...courseSectionMaps ] = row.split(',');
+	  //     for(const courseSectionMap of courseSectionMaps) {
+	  //       const [ course, section ] = courseSectionMap.split('-').map(str => str.toUpperCase());
+	  //       enrollments.push({ itsc, course, section });
+	  //     }
+    //   });
+    //   return {
+    //     enrollments,
+    //     semester: parseInt(termid, 10)
+    //   };
+    // } else {
+    //   throw new Error('error fetching cssystem api');
+    // }
   } catch (error) {
     console.error(`[✗] ${error.message}`)
     throw error
@@ -371,60 +388,61 @@ async function removeStudentsFromSection(users: Array<string>) {
 export async function SyncEnrollment() {
   console.log(`[!] Enrollment synchronization begins at ${new Date().toISOString()}`);
   try {
-    const { semester, enrollments } = await getStudentCourseEnrollmentMap();
-    console.log(`[!] Retrieved ${enrollments.length} enrollment records from CS System`);
-    await createSemesterIfNotExist(semester);
-    const enrollmentItscs = [...new Set<string>(enrollments.map(({ itsc }: any) => itsc))]
-    const students = await getStudentUserIds(enrollmentItscs);
-    const enrollmentCourses = [...new Set<string>(enrollments.map((enrollment: any) => enrollment.course))];
-    for(const courseCode of enrollmentCourses) {
-      const { id: courseId, users, sections } = await getCourse(semester, courseCode);
-      const userItscIds = users.map(({user}:any) => user.itsc);
-      const studentsToBeEnrolled = enrollments.filter((enrollment: any) => {
-        const matchCourse = enrollment.course===courseCode;
-        const userDoesNotExist = !userItscIds.includes(enrollment.itsc);
-        return userDoesNotExist && matchCourse ;
-      });
-      const studentsPresentInCourse = enrollments.filter((enrollment: any) => enrollment.course===courseCode).map((record: any) => record.itsc)
-      const studentsToBeUnrolled = users.filter((user: any) => !studentsPresentInCourse.includes(user.user.itsc)&&user.permission===1);
-      if(studentsToBeUnrolled.length > 0) {
-        console.log(JSON.stringify(studentsToBeUnrolled))
-        const { hasDiscrepancy, affectedRows } = await removeStudentsFromCourse(studentsToBeUnrolled.map((record: any) => record.id));
-        console.log(`[!] Removed ${affectedRows} student${affectedRows>1?'s':''} from course ${courseCode}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-      }
-      const enrollingStudentItscIds = studentsToBeEnrolled.map((record: any) => record.itsc);
-      const { hasDiscrepancy, affectedRows } = await addStudentsToCourse(students.filter((student: any) => enrollingStudentItscIds.includes(student.itsc)).map((student: any) => student.id), courseId);
-      console.log(`[!] Added ${affectedRows} new students to course ${courseCode}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-      const targetSections = [...new Set(studentsToBeEnrolled.map((record: any) => record.section))] as Array<string>;
-      for (const targetSection of targetSections) {
-        if(!sections.map((section: any) => section.name).includes(targetSection)) {
-          const sectionId = await addSection(courseId, targetSection)
-          const studentsOfSectionToBeAdded = enrollments.filter((record: any) => record.section===targetSection && record.course===courseCode).map((record: any) => record.itsc);
-          const studentIds = students.filter((student: any) => studentsOfSectionToBeAdded.includes(student.itsc)).map((student: any) => student.id);
-          const { hasDiscrepancy, affectedRows } = await addStudentsToCourseSection(studentIds, sectionId);
-          console.log(`[!] Added ${affectedRows} students to course section ${courseCode} ${targetSection}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-        } else {
-          const [currentSection] = sections.filter((section: any) => section.name===targetSection);
-          const studentsOfSectionToBeAdded = enrollments.filter((record: any) => {
-            const matchCourse = record.course===courseCode
-            const matchSection = record.section===currentSection.name;
-            const currentSectionUserItscIds = currentSection.users.map(({ user }: any) => user.itsc);
-            const userDoesNotExist = !currentSectionUserItscIds.includes(record.itsc);
-            return matchCourse && matchSection && userDoesNotExist;
-          }).map((record: any) => record.itsc);
-          const studentIds = students.filter((student: any) => studentsOfSectionToBeAdded.includes(student.itsc)).map((student: any) => student.id);
-          const { hasDiscrepancy, affectedRows } = await addStudentsToCourseSection(studentIds, currentSection.id);
-          console.log(`[!] Added ${affectedRows} students to course section ${courseCode} ${targetSection}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-          const studentsPresentInSection = enrollments.filter((enrollment: any) => enrollment.course===courseCode&&enrollment.section===currentSection.name).map((record: any) => record.itsc)
-          const { users } = currentSection;
-          const studentsToBeRemovedFromSection = users.filter(({ user }: any) => !studentsPresentInSection.includes(user.itsc)).map((user: any) => user.id)
-          if (studentsToBeRemovedFromSection.length > 0) {
-            const { hasDiscrepancy, affectedRows } = await removeStudentsFromSection(studentsToBeRemovedFromSection);
-            console.log(`[!] Removed ${affectedRows} student${affectedRows>1?'s':''} from course section ${courseCode} ${currentSection.name}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-          }
-        }
-      }
-    }
+    // const { semester, enrollments } = 
+    await getStudentCourseEnrollmentMap();
+    // console.log(`[!] Retrieved ${enrollments.length} enrollment records from CS System`);
+    // await createSemesterIfNotExist(semester);
+    // const enrollmentItscs = [...new Set<string>(enrollments.map(({ itsc }: any) => itsc))]
+    // const students = await getStudentUserIds(enrollmentItscs);
+    // const enrollmentCourses = [...new Set<string>(enrollments.map((enrollment: any) => enrollment.course))];
+    // for(const courseCode of enrollmentCourses) {
+    //   const { id: courseId, users, sections } = await getCourse(semester, courseCode);
+    //   const userItscIds = users.map(({user}:any) => user.itsc);
+    //   const studentsToBeEnrolled = enrollments.filter((enrollment: any) => {
+    //     const matchCourse = enrollment.course===courseCode;
+    //     const userDoesNotExist = !userItscIds.includes(enrollment.itsc);
+    //     return userDoesNotExist && matchCourse ;
+    //   });
+    //   const studentsPresentInCourse = enrollments.filter((enrollment: any) => enrollment.course===courseCode).map((record: any) => record.itsc)
+    //   const studentsToBeUnrolled = users.filter((user: any) => !studentsPresentInCourse.includes(user.user.itsc)&&user.permission===1);
+    //   if(studentsToBeUnrolled.length > 0) {
+    //     console.log(JSON.stringify(studentsToBeUnrolled))
+    //     const { hasDiscrepancy, affectedRows } = await removeStudentsFromCourse(studentsToBeUnrolled.map((record: any) => record.id));
+    //     console.log(`[!] Removed ${affectedRows} student${affectedRows>1?'s':''} from course ${courseCode}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
+    //   }
+    //   const enrollingStudentItscIds = studentsToBeEnrolled.map((record: any) => record.itsc);
+    //   const { hasDiscrepancy, affectedRows } = await addStudentsToCourse(students.filter((student: any) => enrollingStudentItscIds.includes(student.itsc)).map((student: any) => student.id), courseId);
+    //   console.log(`[!] Added ${affectedRows} new students to course ${courseCode}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
+    //   const targetSections = [...new Set(studentsToBeEnrolled.map((record: any) => record.section))] as Array<string>;
+    //   for (const targetSection of targetSections) {
+    //     if(!sections.map((section: any) => section.name).includes(targetSection)) {
+    //       const sectionId = await addSection(courseId, targetSection)
+    //       const studentsOfSectionToBeAdded = enrollments.filter((record: any) => record.section===targetSection && record.course===courseCode).map((record: any) => record.itsc);
+    //       const studentIds = students.filter((student: any) => studentsOfSectionToBeAdded.includes(student.itsc)).map((student: any) => student.id);
+    //       const { hasDiscrepancy, affectedRows } = await addStudentsToCourseSection(studentIds, sectionId);
+    //       console.log(`[!] Added ${affectedRows} students to course section ${courseCode} ${targetSection}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
+    //     } else {
+    //       const [currentSection] = sections.filter((section: any) => section.name===targetSection);
+    //       const studentsOfSectionToBeAdded = enrollments.filter((record: any) => {
+    //         const matchCourse = record.course===courseCode
+    //         const matchSection = record.section===currentSection.name;
+    //         const currentSectionUserItscIds = currentSection.users.map(({ user }: any) => user.itsc);
+    //         const userDoesNotExist = !currentSectionUserItscIds.includes(record.itsc);
+    //         return matchCourse && matchSection && userDoesNotExist;
+    //       }).map((record: any) => record.itsc);
+    //       const studentIds = students.filter((student: any) => studentsOfSectionToBeAdded.includes(student.itsc)).map((student: any) => student.id);
+    //       const { hasDiscrepancy, affectedRows } = await addStudentsToCourseSection(studentIds, currentSection.id);
+    //       console.log(`[!] Added ${affectedRows} students to course section ${courseCode} ${targetSection}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
+    //       const studentsPresentInSection = enrollments.filter((enrollment: any) => enrollment.course===courseCode&&enrollment.section===currentSection.name).map((record: any) => record.itsc)
+    //       const { users } = currentSection;
+    //       const studentsToBeRemovedFromSection = users.filter(({ user }: any) => !studentsPresentInSection.includes(user.itsc)).map((user: any) => user.id)
+    //       if (studentsToBeRemovedFromSection.length > 0) {
+    //         const { hasDiscrepancy, affectedRows } = await removeStudentsFromSection(studentsToBeRemovedFromSection);
+    //         console.log(`[!] Removed ${affectedRows} student${affectedRows>1?'s':''} from course section ${courseCode} ${currentSection.name}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
+    //       }
+    //     }
+    //   }
+    // }
     console.log(`[!] Enrollment synchronization completed at ${new Date().toISOString()}`);
   } catch (error) {
     console.error(`[✗] ${error.message}`);
@@ -483,4 +501,3 @@ async function getCourse(semesterId: number, courseCode: string): Promise<any> {
     throw error;
   }
 }
-
