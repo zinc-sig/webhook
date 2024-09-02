@@ -345,7 +345,7 @@ async function removeStudentsFromSection(courseId: number) {
       url: '/graphql',
       data: {
         query: `
-          mutation removeStudentsFromSection($users: [bigint!]!) {
+          mutation removeStudentsFromSection($courseId: bigint!) {
             removeStudentsFromSection(where: {
               section: {
                 course_id: {
