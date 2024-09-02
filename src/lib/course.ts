@@ -81,6 +81,10 @@ async function addCourse(code: string, semesterId: number) {
                 semester_id: $semesterId
                 name: $name
               }
+              on_conflict: {
+                constraint: courses_code_semester_id_key
+                update_columns: updated_at
+              }
             ) {
               id
               semester {
@@ -105,36 +109,40 @@ async function addCourse(code: string, semesterId: number) {
   }
 }
 
-async function addSection(courseId: number, sectionName: string) {
+async function addSections(courseId: number, sectionNames: Array<string>) {
   try {
     const { data: { data }} = await httpClient.request({
       url: '/graphql',
       data: {
         query: `
-          mutation addSection($courseId: bigint!, $sectionName: String!) {
-            createSection(
-              object: {
-                course_id: $courseId
-                name: $sectionName
+          mutation batchCreateSection($sections: [sections_insert_input!]!) {
+            batchCreateSection(
+              objects: $sections
+              on_conflict: {
+                constraint: sections_course_id_name_key
+                update_columns: updated_at
               }
             ) {
-              id
-              name
-              course {
-                code
+              returning {
+                id
+                name
+                course {
+                  code
+                }
               }
             }
           }
         `,
         variables: {
-          courseId,
-          sectionName
+          sections: sectionNames.map(name => ({ name, course_id: courseId }))
         }
       }
     });
-    const { id, name, course } = data.createSection;
-    console.log(`[!] Added new section ${name} to course ${course.code} with id ${id}`);
-    return id;
+    const { returning } = data.createSection;
+    return returning.reduce((acc: any, { id, name, course }: any) => {
+      console.log(`[!] Added new section ${name} to course ${course.code} with id ${id}`);
+      acc[name] = id;
+    }, {});
   } catch (error) {
     console.error(`[✗] ${error.message}`);
     throw error
@@ -172,30 +180,25 @@ async function addStudentsToCourseSection(studentUserIds: Array<any>, sectionId:
   }
 }
 
-export async function getStudentCourseEnrollmentMap() {
+export async function getStudentCourseEnrollmentMap(courseCode: string) {
   try {
-    const { data: { data, termid, status } } = await axios({
+    const { data: { access_token }} = await axios({
       method: 'post',
-      url: process.env.CSSYSTEM_API_URL,
-      data: JSON.parse(Buffer.from(process.env.CSSYSTEM_API_SECRET_PAYLOAD, 'base64').toString())
+      url: `${process.env.ISO_API_URL}/oauth/token`,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from([process.env.ISO_API_CLIENT_ID, process.env.ISO_API_CLIENT_SECRET].join(':')).toString('base64')}`
+      },
+      data: `grant_type=password&username=${process.env.ISO_API_USERNAME}&password=${process.env.ISO_API_PASSWORD}`
     });
-    if(status===0) {
-      const records = data.split('\n').filter((line: string) => line.length>0);
-      let enrollments: any = [];
-      records.forEach((row: string) => {
-        const [ itsc, ...courseSectionMaps ] = row.split(',');
-	      for(const courseSectionMap of courseSectionMaps) {
-	        const [ course, section ] = courseSectionMap.split('-').map(str => str.toUpperCase());
-	        enrollments.push({ itsc, course, section });
-	      }
-      });
-      return {
-        enrollments,
-        semester: parseInt(termid, 10)
-      };
-    } else {
-      throw new Error('error fetching cssystem api');
-    }
+    const { data } = await axios({
+      method: 'get',
+      url: `${process.env.ISO_API_URL}/sis/class_enrl?crseCode=${courseCode}`,
+      headers: {
+        'authorization': `Bearer ${access_token}`
+      }
+    })
+    return data;
   } catch (error) {
     console.error(`[✗] ${error.message}`)
     throw error
@@ -301,16 +304,19 @@ async function getStudentUserIds(itscIds: Array<string>) {
   }
 }
 
-async function removeStudentsFromCourse(users: Array<string>) {
+async function removeStudentsFromCourse(courseId: number) {
   try {
     const { data: { data } } = await httpClient.request({
       url: '/graphql',
       data: {
         query: `
-          mutation removeStudentsFromCourse($users: [bigint!]!) {
+          mutation removeStudentsFromCourse($courseId: bigint!) {
             removeUsersFromCourse(where: {
-              id: {
-                _in: $users
+              course_id: {
+                _eq: $courseId
+              }
+              permission: {
+                _eq: 1
               }
             }) {
               affected_rows
@@ -318,13 +324,12 @@ async function removeStudentsFromCourse(users: Array<string>) {
           }
         `,
         variables: {
-          users
+          courseId
         }
       }
     });
     const { affected_rows: affectedRows } = data.removeUsersFromCourse;
     return {
-      hasDiscrepancy: users.length===affectedRows,
       affectedRows
     };
   } catch (error) {
@@ -333,17 +338,18 @@ async function removeStudentsFromCourse(users: Array<string>) {
   }
 }
 
-async function removeStudentsFromSection(users: Array<string>) {
+async function removeStudentsFromSection(courseId: number) {
   try {
-    console.log(users)
     const response = await httpClient.request({
       url: '/graphql',
       data: {
         query: `
           mutation removeStudentsFromSection($users: [bigint!]!) {
             removeStudentsFromSection(where: {
-              id: {
-                _in: $users
+              section: {
+                course_id: {
+                  _eq: $courseId
+                }
               }
             }) {
               affected_rows
@@ -351,15 +357,12 @@ async function removeStudentsFromSection(users: Array<string>) {
           }
         `,
         variables: {
-          users
+          courseId
         }
       }
     });
-    console.log(response);
-    console.log(response.data);
     const { affected_rows: affectedRows } = response.data.data.removeStudentsFromSection;
     return {
-      hasDiscrepancy: users.length===affectedRows,
       affectedRows
     }
   } catch (error) {
@@ -371,57 +374,26 @@ async function removeStudentsFromSection(users: Array<string>) {
 export async function SyncEnrollment() {
   console.log(`[!] Enrollment synchronization begins at ${new Date().toISOString()}`);
   try {
-    const { semester, enrollments } = await getStudentCourseEnrollmentMap();
-    console.log(`[!] Retrieved ${enrollments.length} enrollment records from CS System`);
-    await createSemesterIfNotExist(semester);
-    const enrollmentItscs = [...new Set<string>(enrollments.map(({ itsc }: any) => itsc))]
-    const students = await getStudentUserIds(enrollmentItscs);
-    const enrollmentCourses = [...new Set<string>(enrollments.map((enrollment: any) => enrollment.course))];
-    for(const courseCode of enrollmentCourses) {
-      const { id: courseId, users, sections } = await getCourse(semester, courseCode);
-      const userItscIds = users.map(({user}:any) => user.itsc);
-      const studentsToBeEnrolled = enrollments.filter((enrollment: any) => {
-        const matchCourse = enrollment.course===courseCode;
-        const userDoesNotExist = !userItscIds.includes(enrollment.itsc);
-        return userDoesNotExist && matchCourse ;
-      });
-      const studentsPresentInCourse = enrollments.filter((enrollment: any) => enrollment.course===courseCode).map((record: any) => record.itsc)
-      const studentsToBeUnrolled = users.filter((user: any) => !studentsPresentInCourse.includes(user.user.itsc)&&user.permission===1);
-      if(studentsToBeUnrolled.length > 0) {
-        console.log(JSON.stringify(studentsToBeUnrolled))
-        const { hasDiscrepancy, affectedRows } = await removeStudentsFromCourse(studentsToBeUnrolled.map((record: any) => record.id));
-        console.log(`[!] Removed ${affectedRows} student${affectedRows>1?'s':''} from course ${courseCode}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-      }
-      const enrollingStudentItscIds = studentsToBeEnrolled.map((record: any) => record.itsc);
-      const { hasDiscrepancy, affectedRows } = await addStudentsToCourse(students.filter((student: any) => enrollingStudentItscIds.includes(student.itsc)).map((student: any) => student.id), courseId);
-      console.log(`[!] Added ${affectedRows} new students to course ${courseCode}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-      const targetSections = [...new Set(studentsToBeEnrolled.map((record: any) => record.section))] as Array<string>;
-      for (const targetSection of targetSections) {
-        if(!sections.map((section: any) => section.name).includes(targetSection)) {
-          const sectionId = await addSection(courseId, targetSection)
-          const studentsOfSectionToBeAdded = enrollments.filter((record: any) => record.section===targetSection && record.course===courseCode).map((record: any) => record.itsc);
-          const studentIds = students.filter((student: any) => studentsOfSectionToBeAdded.includes(student.itsc)).map((student: any) => student.id);
-          const { hasDiscrepancy, affectedRows } = await addStudentsToCourseSection(studentIds, sectionId);
-          console.log(`[!] Added ${affectedRows} students to course section ${courseCode} ${targetSection}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-        } else {
-          const [currentSection] = sections.filter((section: any) => section.name===targetSection);
-          const studentsOfSectionToBeAdded = enrollments.filter((record: any) => {
-            const matchCourse = record.course===courseCode
-            const matchSection = record.section===currentSection.name;
-            const currentSectionUserItscIds = currentSection.users.map(({ user }: any) => user.itsc);
-            const userDoesNotExist = !currentSectionUserItscIds.includes(record.itsc);
-            return matchCourse && matchSection && userDoesNotExist;
-          }).map((record: any) => record.itsc);
-          const studentIds = students.filter((student: any) => studentsOfSectionToBeAdded.includes(student.itsc)).map((student: any) => student.id);
-          const { hasDiscrepancy, affectedRows } = await addStudentsToCourseSection(studentIds, currentSection.id);
-          console.log(`[!] Added ${affectedRows} students to course section ${courseCode} ${targetSection}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-          const studentsPresentInSection = enrollments.filter((enrollment: any) => enrollment.course===courseCode&&enrollment.section===currentSection.name).map((record: any) => record.itsc)
-          const { users } = currentSection;
-          const studentsToBeRemovedFromSection = users.filter(({ user }: any) => !studentsPresentInSection.includes(user.itsc)).map((user: any) => user.id)
-          if (studentsToBeRemovedFromSection.length > 0) {
-            const { hasDiscrepancy, affectedRows } = await removeStudentsFromSection(studentsToBeRemovedFromSection);
-            console.log(`[!] Removed ${affectedRows} student${affectedRows>1?'s':''} from course section ${courseCode} ${currentSection.name}, ${hasDiscrepancy?'No discrepancy':'Discrepancies'} detected`);
-          }
+    for (const course of ['COMP2011', 'COMP2012', 'COMP2211', 'COMP2012H']) {
+      const data = await getStudentCourseEnrollmentMap(course);
+      await createSemesterIfNotExist(parseInt(data.term, 10));
+      const courseId = await addCourse(data.crseCode, parseInt(data.term, 10));
+      const sectionNames = data.classes.filter((c : any) => c.classType==='N').map((c: any) => c.section);
+      const sections = await addSections(courseId, sectionNames);
+      await removeStudentsFromCourse(courseId);
+      await removeStudentsFromSection(courseId);
+      for (const section of data.classes) {
+        const students = await getStudentUserIds(section.students.filter((s: any) => s.enrollStatus==='Enrolled').map((s: any) => s.emailAddr.slice(0, s.emailAddr.indexOf('@'))));
+        switch(section.classType) {
+          case 'N':
+            const sectionId = sections[section.section];
+            await addStudentsToCourseSection(students.map((student: any) => student.id), sectionId);
+            break;
+          case 'E':
+            await addStudentsToCourse(students.map((student: any) => student.id), courseId);
+            break;
+          default:
+            console.log(`[!] Skipping section ${section.classType} ${section.section} for course ${section.crseCode}`);
         }
       }
     }
@@ -483,4 +455,3 @@ async function getCourse(semesterId: number, courseCode: string): Promise<any> {
     throw error;
   }
 }
-
