@@ -65,11 +65,8 @@ async function createSemesterIfNotExist(id: number): Promise<void>{
   }
 }
 
-async function addCourse(code: string, semesterId: number) {
+async function addCourse(code: string, semesterId: number, title: string) {
   try {
-    const { data: { title }} = await axios({
-      url: `https://api.contrib.ust.dev/v1/courses/${code}`
-    });
     const { data: { data }} = await httpClient.request({
       url: '/graphql',
       data: {
@@ -375,10 +372,10 @@ async function removeStudentsFromSection(courseId: number) {
 export async function SyncEnrollment() {
   console.log(`[!] Enrollment synchronization begins at ${new Date().toISOString()}`);
   try {
-    for (const course of ['COMP2011', 'COMP2012', 'COMP2211', 'COMP2012H']) {
+    for (const course of ['COMP2011', 'COMP2012', 'COMP2211']) {
       const data = await getStudentCourseEnrollmentMap(course);
       await createSemesterIfNotExist(parseInt(data.term, 10));
-      const courseId = await addCourse(data.crseCode, parseInt(data.term, 10));
+      const courseId = await addCourse(data.crseCode, parseInt(data.term, 10), data.crseTitle);
       const sectionNames = data.classes.filter((c : any) => c.classType==='N').map((c: any) => c.section);
       const sections = await addSections(courseId, sectionNames);
       await removeStudentsFromCourse(courseId);
