@@ -376,7 +376,7 @@ export async function SyncEnrollment() {
     for (const course of ['COMP2011', 'COMP2012', 'COMP2211']) {
       const data = await getStudentCourseEnrollmentMap(course);
       await createSemesterIfNotExist(parseInt(data.term, 10));
-      const courseId = await addCourse(data.crseCode, parseInt(data.term, 10), data.crseTitle);
+      const courseId = await addCourse(data.crseCode, parseInt(data.term, 10), data.classes[0].crseTitle);
       const sectionNames = data.classes.filter((c : any) => c.classType==='N').map((c: any) => c.section);
       const sections = await addSections(courseId, sectionNames);
       await removeStudentsFromCourse(courseId);
