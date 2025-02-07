@@ -67,7 +67,7 @@ async function createSemesterIfNotExist(id: number): Promise<void>{
 
 async function addCourse(code: string, semesterId: number, title: string) {
   try {
-    const { data: { data }} = await httpClient.request({
+    const { data } = await httpClient.request({
       url: '/graphql',
       data: {
         query: `
@@ -97,7 +97,8 @@ async function addCourse(code: string, semesterId: number, title: string) {
         }
       }
     });
-    const { id, semester } = data.createCourse;
+    console.log(data);
+    const { id, semester } = data.data.createCourse;
     console.log(`[!] Added course ${code} to ${semester.name} semester with id ${id}`);
     return id;
   } catch (error) {
