@@ -20,17 +20,18 @@ func TestSyncEnrollment(t *testing.T) {
 
 		// Mock external API
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/oauth/token" {
+			switch r.URL.Path {
+			case "/oauth/token":
 				w.Write([]byte(`{"access_token":"test"}`))
-			} else if r.URL.Path == "/sis/class_enrl" {
+			case "/sis/class_enrl":
 				enrollmentMap := handlers.EnrollmentMap{
 					Term:     "2210",
 					CrseCode: "COMP1023",
-					Classes:  []struct {
-						CrseTitle   string `json:"crseTitle"`
-						Section     string `json:"section"`
-						ClassType   string `json:"classType"`
-						Students    []struct {
+					Classes: []struct {
+						CrseTitle string `json:"crseTitle"`
+						Section   string `json:"section"`
+						ClassType string `json:"classType"`
+						Students  []struct {
 							EmailAddr    string `json:"emailAddr"`
 							EnrollStatus string `json:"enrollStatus"`
 						} `json:"students"`

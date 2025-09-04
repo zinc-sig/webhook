@@ -83,7 +83,7 @@ func TestManualGradingTask(t *testing.T) {
 
 		// Expectations
 		mockGraphQLClient.On("Run", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-		mockRedis.ExpectRPush(mock.Anything, mock.Anything).SetVal(1)
+		mockRedis.Regexp().ExpectRPush(".*", ".*").SetVal(1)
 
 		// Assertions
 		if assert.NoError(t, h.ManualGradingTask(c)) {
@@ -109,11 +109,14 @@ func TestGradingTask(t *testing.T) {
 
 		// Expectations
 		mockGraphQLClient.On("Run", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-		mockRedis.ExpectRPush(mock.Anything, mock.Anything).SetVal(1)
+
+		// This doesn't work since redismock doesn't support match any on non-string types
+		mockRedis.Regexp().ExpectRPush(".*", ".*").SetVal(1)
 
 		// Assertions
 		if assert.NoError(t, h.GradingTask(c)) {
 			assert.Equal(t, http.StatusOK, rec.Code)
 		}
+
 	})
 }

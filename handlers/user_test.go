@@ -34,7 +34,7 @@ func TestIdentity(t *testing.T) {
 		defer mockJWKFetch(t, privateKey)()
 
 		// Expectations
-		mockRedis.ExpectGet(mock.Anything).SetVal(fmt.Sprintf(`{"data":{"id_token":"%s"}}`, tokenString))
+		mockRedis.Regexp().ExpectGet(".*").SetVal(fmt.Sprintf(`{"data":{"id_token":"%s"}}`, tokenString))
 		mockGraphQLClient.On("Run", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 		// Assertions

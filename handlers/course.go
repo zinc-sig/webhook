@@ -92,13 +92,13 @@ mutation removeStudentsFromSection($courseId: bigint!) {
 }`
 
 type EnrollmentMap struct {
-	Term      string `json:"term"`
-	CrseCode  string `json:"crseCode"`
-	Classes   []struct {
-		CrseTitle   string `json:"crseTitle"`
-		Section     string `json:"section"`
-		ClassType   string `json:"classType"`
-		Students    []struct {
+	Term     string `json:"term"`
+	CrseCode string `json:"crseCode"`
+	Classes  []struct {
+		CrseTitle string `json:"crseTitle"`
+		Section   string `json:"section"`
+		ClassType string `json:"classType"`
+		Students  []struct {
 			EmailAddr    string `json:"emailAddr"`
 			EnrollStatus string `json:"enrollStatus"`
 		} `json:"students"`
@@ -208,7 +208,7 @@ func (h *Handler) getStudentCourseEnrollmentMap(courseCode string, apiURL string
 	}
 
 	// Fetch enrollment map
-	enrollmentURL := fmt.Sprintf("%s/sis/class_enrl?crseCode=%s", os.Getenv("ISO_API_URL"), courseCode)
+	enrollmentURL := fmt.Sprintf("%s/sis/class_enrl?crseCode=%s", apiURL, courseCode)
 	req, err = http.NewRequest("GET", enrollmentURL, nil)
 	if err != nil {
 		return nil, err
@@ -359,7 +359,7 @@ func (h *Handler) getStudentUserIds(itscIDs []string) ([]int, error) {
 		}
 
 		if err := h.GraphQLClient.Run(context.Background(), req, &addResp); err != nil {
-		return nil, err
+			return nil, err
 		}
 
 		for _, user := range addResp.BatchCreateUser.Returning {
