@@ -6,11 +6,12 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/labstack/echo/v4"
+	"github.com/zinc-sig/webhook/graphql"
 	"github.com/zinc-sig/webhook/handlers"
 )
 
 func main() {
-	graphqlClient := NewGraphQLClient()
+	graphqlClient := graphql.NewGraphQLClient()
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("REDIS_URL"),
 		Password: "", // no password set
