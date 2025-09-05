@@ -1,5 +1,7 @@
 package trigger
 
+import "encoding/json"
+
 type EnrollmentMap struct {
 	Term     string `json:"term"`
 	CrseCode string `json:"crseCode"`
@@ -91,3 +93,106 @@ mutation removeStudentsFromSection($courseId: bigint!) {
     affected_rows
   }
 }`
+
+const updateDecompressionResultForSubmission = `
+mutation updateDecompressionResultForSubmission($id: bigint!, $extractedPath: String, $failReason: String) {
+  update_submissions_by_pk(pk_columns: {id: $id}, _set: {extracted_path: $extractedPath, fail_reason: $failReason}) {
+    id
+  }
+}`
+
+type RowTriggerPayload struct {
+	Event RowTriggerEvent `json:"event"`
+}
+
+type RowTriggerEvent struct {
+	Data RowSnapshot `json:"data"`
+}
+
+type RowSnapshot struct {
+	New json.RawMessage `json:"new"`
+	Old json.RawMessage `json:"old"`
+}
+
+type SubmissionRow struct {
+	ID         int    `json:"id"`
+	UploadName string `json:"upload_name"`
+	StoredName string `json:"stored_name"`
+}
+
+type ReportRow struct {
+	ID              int             `json:"id"`
+	PipelineResults json.RawMessage `json:"pipeline_results"`
+	IsFinal         bool            `json:"is_final"`
+}
+
+type PipelineResults struct {
+	StageReports map[string]json.RawMessage `json:"stageReports"`
+	ScoreReports json.RawMessage            `json:"scoreReports"`
+}
+
+type StdioTestReport struct {
+	Visibility string   `json:"visibility"`
+	IsCorrect  bool     `json:"isCorrect"`
+	Stdout     []string `json:"stdout"`
+	Expect     []string `json:"expect"`
+	Diff       []string `json:"diff"`
+}
+
+type ValgrindReport struct {
+	Visibility string   `json:"visibility"`
+	IsCorrect  bool     `json:"isCorrect"`
+	Stdout     []string `json:"stdout"`
+	Errors     []string `json:"errors"`
+}
+
+const getGradingSubmissions = `
+query getGradingSubmissions($assignmentConfigId: bigint!) {
+  assignmentConfig: assignment_configs_by_pk(id: $assignmentConfigId) {
+    stopCollectionAt: stop_collection_at
+    submissions(distinct_on: user_id, order_by: {user_id: asc, created_at: desc}) {
+      id
+      extracted_path
+      created_at
+    }
+  }
+}`
+
+const getLatestSubmissionsForAssignmentConfig = `
+query getLatestSubmissionsForAssignmentConfig($assignmentConfigId: bigint!) {
+  assignmentConfig: assignment_configs_by_pk(id: $assignmentConfigId) {
+    submissions(distinct_on: user_id, order_by: {user_id: asc, created_at: desc}) {
+      id
+      extracted_path
+      created_at
+    }
+  }
+}`
+
+const getSelectedSubmissions = `
+query getSelectedSubmissions($submissions: [bigint!]) {
+  submissions(where: {id: {_in: $submissions}}) {
+    id
+    extracted_path
+    created_at
+  }
+}`
+
+const addReportArtifacts = `
+mutation addReportArtifacts($id: bigint!, $sanitizedReports: jsonb!, $grade: jsonb!) {
+  update_reports_by_pk(pk_columns: {id: $id}, _set: {sanitized_pipeline_results: $sanitizedReports, grade: $grade}) {
+    id
+  }
+}`
+
+type PostGradingProcessingRequest struct {
+	Event struct {
+		Data struct {
+			New struct {
+				ID              int             `json:"id"`
+				PipelineResults json.RawMessage `json:"pipeline_results"`
+				IsFinal         bool            `json:"is_final"`
+			} `json:"new"`
+		} `json:"data"`
+	} `json:"event"`
+}

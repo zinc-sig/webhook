@@ -18,7 +18,11 @@ func SyncEnrollment(s *service) echo.HandlerFunc {
 
 func DecompressSubmission(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		// Implementation of DecompressSubmission handler
+		var req RowTriggerPayload
+		if err := c.Bind(&req); err != nil {
+			return c.String(http.StatusBadRequest, "Invalid request body")
+		}
+		s.DecompressSubmission(c.Request().Context(), req.Event.Data.New)
 		return c.String(http.StatusOK, "DecompressSubmission called")
 	}
 }

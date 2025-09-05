@@ -13,7 +13,7 @@ type IdentityResponse struct {
 	XHasuraRequestedAt    string `json:"X-Hasura-Requested-At"`
 }
 
-type CookieData struct {
+type TokenSet struct {
 	Data struct {
 		IdToken string `json:"id_token"`
 	} `json:"data"`
@@ -21,6 +21,7 @@ type CookieData struct {
 
 type User struct {
 	ID      int    `json:"id"`
+	Itsc    string `json:"itsc"`
 	Name    string `json:"name"`
 	IsAdmin bool   `json:"isAdmin"`
 	Courses []struct {
@@ -33,6 +34,7 @@ query GetUserByITSC($itsc: String!) {
   users(where: {itsc: {_eq: $itsc}}) {
     id
     name
+		itsc
     isAdmin: is_admin
     courses {
       course_id

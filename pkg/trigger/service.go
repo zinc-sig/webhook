@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -349,4 +350,166 @@ func getSemesterNameAndYear(id string) (string, int) {
 	default:
 		return fmt.Sprintf("20%s-%d Fall", yearSuffix, year+1), year
 	}
+}
+
+func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMessage) error {
+	var submission SubmissionRow
+	if err := json.Unmarshal(payload, &submission); err != nil {
+		return fmt.Errorf("failed to unmarshal submission data: %s", err.Error())
+	}
+	if !strings.HasSuffix(submission.UploadName, ".zip") {
+		return s.updateExtractedSubmissionEntry(ctx, submission.ID, "", "Unsupported archive format")
+	}
+
+	if err := extractZip(submission.ID, submission.StoredName); err != nil {
+		return s.updateExtractedSubmissionEntry(ctx, submission.ID, "", err.Error())
+	}
+
+	return s.updateExtractedSubmissionEntry(ctx, submission.ID, fmt.Sprintf("extracted/%d", submission.ID), "")
+}
+
+func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMessage) error {
+	var report ReportRow
+	if err := json.Unmarshal(payload, &report); err != nil {
+		return fmt.Errorf("failed to unmarshal report data: %s", err.Error())
+	}
+	var pipelineResults PipelineResults
+	if err := json.Unmarshal(report.PipelineResults, &pipelineResults); err != nil {
+		return fmt.Errorf("failed to parse pipeline results: %s", err.Error())
+	}
+
+	censoredReports := make(map[string]interface{})
+	var grade map[string]interface{}
+
+	for stage, stageReport := range pipelineResults.StageReports {
+		switch stage {
+		case "valgrind":
+			var valgrindReports []ValgrindReport
+			if err := json.Unmarshal(stageReport, &valgrindReports); err == nil {
+				for i, r := range valgrindReports {
+					switch r.Visibility {
+					case "ALWAYS_HIDDEN":
+						valgrindReports[i].Stdout = []string{}
+						valgrindReports[i].Errors = []string{}
+					case "VISIBLE_AFTER_GRADING":
+						if !report.IsFinal {
+							valgrindReports[i].Stdout = []string{}
+							valgrindReports[i].Errors = []string{}
+						}
+					case "VISIBLE_AFTER_GRADING_IF_FAILED":
+						if !report.IsFinal || r.IsCorrect {
+							valgrindReports[i].Stdout = []string{}
+							valgrindReports[i].Errors = []string{}
+						}
+					}
+				}
+				censoredReports[stage] = valgrindReports
+			}
+		case "stdioTest":
+			var stdioTestReports []StdioTestReport
+			if err := json.Unmarshal(stageReport, &stdioTestReports); err == nil {
+				for i, r := range stdioTestReports {
+					switch r.Visibility {
+					case "ALWAYS_HIDDEN":
+						stdioTestReports[i].Stdout = []string{}
+						stdioTestReports[i].Expect = []string{}
+						stdioTestReports[i].Diff = []string{}
+					case "VISIBLE_AFTER_GRADING":
+						if !report.IsFinal {
+							stdioTestReports[i].Expect = []string{}
+							stdioTestReports[i].Diff = []string{}
+						}
+					case "VISIBLE_AFTER_GRADING_IF_FAILED":
+						if !report.IsFinal || r.IsCorrect {
+							stdioTestReports[i].Expect = []string{}
+							stdioTestReports[i].Diff = []string{}
+						}
+					}
+				}
+				censoredReports[stage] = stdioTestReports
+			}
+		case "score":
+			var scoreReportObj []map[string]interface{}
+			if err := json.Unmarshal(stageReport, &scoreReportObj); err == nil && len(scoreReportObj) > 0 {
+				grade = scoreReportObj[0]
+			}
+		default:
+			censoredReports[stage] = stageReport
+		}
+	}
+
+	if grade != nil && pipelineResults.ScoreReports != nil {
+		var scoreReportsObj interface{}
+		if err := json.Unmarshal(pipelineResults.ScoreReports, &scoreReportsObj); err == nil {
+			grade["details"] = scoreReportsObj
+		}
+	}
+
+	graphqlReq := graphql.NewRequest(addReportArtifacts)
+	graphqlReq.Var("id", report.ID)
+	graphqlReq.Var("sanitizedReports", censoredReports)
+	graphqlReq.Var("grade", grade)
+
+	var resp struct{}
+	if err := s.graphql.Run(ctx, graphqlReq, &resp); err != nil {
+		return fmt.Errorf("failed to update report artifacts: %s", err.Error())
+	}
+	return nil
+}
+
+func (s *service) updateExtractedSubmissionEntry(ctx context.Context, id int, extractedPath, failReason string) error {
+	req := graphql.NewRequest(updateDecompressionResultForSubmission)
+	req.Var("id", id)
+	if extractedPath != "" {
+		req.Var("extractedPath", extractedPath)
+	} else {
+		req.Var("extractedPath", nil)
+	}
+	if failReason != "" {
+		req.Var("failReason", failReason)
+	} else {
+		req.Var("failReason", nil)
+	}
+
+	var resp struct{}
+	return s.graphql.Run(ctx, req, &resp)
+}
+
+func extractZip(submissionID int, storedName string) error {
+	mountPath := os.Getenv("SHARED_MOUNT_PATH")
+	if mountPath == "" {
+		mountPath = "/home/system/workspace"
+	}
+
+	file := fmt.Sprintf("%s/%s", mountPath, storedName)
+	extractToPath := fmt.Sprintf("%s/extracted/%d", mountPath, submissionID)
+	temporaryResolvePath := fmt.Sprintf("/tmp/%d", submissionID)
+
+	if err := os.MkdirAll(temporaryResolvePath, os.ModePerm); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("unzip", file, "-d", temporaryResolvePath)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	files, err := os.ReadDir(temporaryResolvePath)
+	if err != nil {
+		return err
+	}
+
+	if len(files) >= 1 {
+		sourcePath := temporaryResolvePath
+		if len(files) == 1 && files[0].IsDir() {
+			sourcePath = fmt.Sprintf("%s/%s", temporaryResolvePath, files[0].Name())
+		}
+		if err := os.Rename(sourcePath, extractToPath); err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("empty directory")
+	}
+
+	return nil
 }
