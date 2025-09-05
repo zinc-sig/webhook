@@ -32,8 +32,14 @@ func DecompressSubmission(s *service) echo.HandlerFunc {
 
 func PostGradingProcessing(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		// Implementation of PostGradingProcessing handler
-		return c.String(http.StatusOK, "PostGradingProcessing called")
+		var req RowTriggerPayload
+		if err := c.Bind(&req); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		}
+		if err := s.PostGradingProcessing(c.Request().Context(), req.Event.Data.New); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 }
 
@@ -41,10 +47,10 @@ func ScheduleGrading(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var req RowTriggerPayload
 		if err := c.Bind(&req); err != nil {
-			return c.String(http.StatusBadRequest, "Invalid request body")
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		}
 		if err := s.ScheduleGrading(c.Request().Context(), &req.Event); err != nil {
-			return c.String(http.StatusInternalServerError, err.Error())
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
