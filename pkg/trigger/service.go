@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -52,19 +53,23 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 	for _, course := range courses {
 		enrollmentMap, err := s.getStudentCourseEnrollmentMap(course, apiURL)
 		if err != nil {
+			slog.Warn("Failed to get enrollment map", "course", course, "error", err)
 			return fmt.Errorf("failed to get enrollment map for course %s: %s", course, err.Error())
 		}
 
 		term, err := strconv.Atoi(enrollmentMap.Term)
 		if err != nil {
+			slog.Warn("Failed to parse term", "course", course, "error", err)
 			return fmt.Errorf("failed to parse term for course %s: %s", course, err.Error())
 		}
 		if err := s.createSemesterIfNotExist(ctx, term); err != nil {
+			slog.Warn("Failed to create semester", "course", course, "error", err)
 			return fmt.Errorf("failed to create semester for course %s: %s", course, err.Error())
 		}
 
 		courseID, err := s.addCourse(enrollmentMap.CrseCode, term, enrollmentMap.Classes[0].CrseTitle)
 		if err != nil {
+			slog.Warn("Failed to add course", "course", course, "error", err)
 			return fmt.Errorf("failed to add course %s: %s", course, err.Error())
 		}
 
@@ -77,14 +82,17 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 
 		sections, err := s.addSections(courseID, sectionNames)
 		if err != nil {
+			slog.Warn("Failed to add sections", "course", course, "error", err)
 			return fmt.Errorf("failed to add sections for course %s: %s", course, err.Error())
 		}
 
 		if err := s.removeStudentsFromCourse(courseID); err != nil {
+			slog.Warn("Failed to remove students from course", "course", course, "error", err)
 			return fmt.Errorf("failed to remove students from course %s: %s", course, err.Error())
 		}
 
 		if err := s.removeStudentsFromSection(courseID); err != nil {
+			slog.Warn("Failed to remove students from section", "course", course, "error", err)
 			return fmt.Errorf("failed to remove students from section for course %s: %s", course, err.Error())
 		}
 
@@ -98,6 +106,7 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 
 			studentUserIDs, err := s.getStudentUserIds(itscIDs)
 			if err != nil {
+				slog.Warn("Failed to get student user ids", "course", course, "error", err)
 				return fmt.Errorf("failed to get student user ids for course %s: %s", course, err.Error())
 			}
 
@@ -105,10 +114,12 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 			case "N":
 				sectionID := sections[class.Section]
 				if err := s.addStudentsToCourseSection(studentUserIDs, sectionID); err != nil {
+					slog.Warn("Failed to add students to course section", "course", course, "error", err)
 					return fmt.Errorf("failed to add students to course section for course %s: %s", course, err.Error())
 				}
 			case "E":
 				if err := s.addStudentsToCourse(studentUserIDs, courseID); err != nil {
+					slog.Warn("Failed to add students to course", "course", course, "error", err)
 					return fmt.Errorf("failed to add students to course for course %s: %s", course, err.Error())
 				}
 			}
@@ -375,10 +386,12 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMessage) error {
 	var report ReportRow
 	if err := json.Unmarshal(payload, &report); err != nil {
+		slog.Warn("Failed to unmarshal report data", "error", err)
 		return fmt.Errorf("failed to unmarshal report data: %s", err.Error())
 	}
 	var pipelineResults PipelineResults
 	if err := json.Unmarshal(report.PipelineResults, &pipelineResults); err != nil {
+		slog.Warn("Failed to parse pipeline results", "error", err)
 		return fmt.Errorf("failed to parse pipeline results: %s", err.Error())
 	}
 
@@ -456,6 +469,7 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 
 	var resp struct{}
 	if err := s.graphql.Run(ctx, graphqlReq, &resp); err != nil {
+		slog.Warn("Failed to update report artifacts", "error", err)
 		return fmt.Errorf("failed to update report artifacts: %s", err.Error())
 	}
 	return nil
@@ -497,11 +511,13 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 			} `json:"assignmentConfig"`
 		}
 		if err := s.graphql.Run(ctx, graphqlReq, &resp); err != nil {
+			slog.Warn("Failed to get submissions", "error", err)
 			return fmt.Errorf("failed to get submissions: %s", err.Error())
 		}
 		graphqlResp.Submissions = resp.AssignmentConfig.Submissions
 	} else {
 		if err := s.graphql.Run(ctx, graphqlReq, &graphqlResp); err != nil {
+			slog.Warn("Failed to get submissions", "error", err)
 			return fmt.Errorf("failed to get submissions: %s", err.Error())
 		}
 	}
@@ -519,10 +535,12 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		"payload": payload,
 	})
 	if err != nil {
+		slog.Warn("Failed to marshal job payload", "error", err)
 		return fmt.Errorf("failed to marshal job payload: %s", err.Error())
 	}
 
 	if err := s.cache.Publish(ctx, "zinc_queue:grader", jsonPayload); err != nil {
+		slog.Warn("Failed to push job to redis", "error", err)
 		return fmt.Errorf("failed to push job to redis: %s", err.Error())
 	}
 	return nil
@@ -544,6 +562,7 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 	}
 
 	if err := s.graphql.Run(ctx, graphqlReq, &graphqlResp); err != nil {
+		slog.Warn("Failed to fetch submissions", "error", err)
 		return fmt.Errorf("failed to fetch submissions: %s", err.Error())
 	}
 
@@ -560,10 +579,12 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 			"payload": payload,
 		})
 		if err != nil {
+			slog.Warn("Failed to marshal job payload", "error", err)
 			return fmt.Errorf("failed to marshal job payload: %s", err.Error())
 		}
 
 		if err := s.cache.Publish(ctx, "zinc_queue:grader", jsonPayload); err != nil {
+			slog.Warn("Failed to push job to redis", "error", err)
 			return fmt.Errorf("failed to push job to redis: %s", err.Error())
 		}
 	}

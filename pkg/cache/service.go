@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"log/slog"
 	"os"
 	"time"
@@ -19,24 +18,24 @@ type JobMessage struct {
 }
 
 func (s *service) processMessage(ctx context.Context, queue, rawMessage string) {
-	log.Printf("Received message: %s", rawMessage)
+	slog.Info("Received message: %s", "msg", rawMessage)
 
 	var msg JobMessage
 	if err := json.Unmarshal([]byte(rawMessage), &msg); err != nil {
-		log.Printf("Failed to parse message: %v", err)
+		slog.Warn("Failed to unmarshal message", "error", err)
 		return
 	}
 
 	// Look up the handler for this job type
 	handler, exists := s.handlers[msg.Job]
 	if !exists {
-		log.Printf("No handler registered for job type: %s", msg.Job)
+		slog.Warn("No handler registered for: %s", "job type", msg.Job)
 		return
 	}
 
 	// Execute the callback
 	if err := handler(ctx, msg.Job, msg.Payload); err != nil {
-		log.Printf("Handler error for job %s: %v", msg.Job, err)
+		slog.Warn("Handler error for job %s", "job", msg.Job, "error", err)
 	}
 }
 
@@ -73,9 +72,11 @@ func (s *service) Put(ctx context.Context, key string, value []byte, expiry time
 func (s *service) Read(ctx context.Context, key string) ([]byte, error) {
 	result, err := s.client.Get(ctx, key).Bytes()
 	if err == redis.Nil {
+		slog.Warn("Key does not exist", "key", key)
 		return nil, nil // Key does not exist
 	}
 	if err != nil {
+		slog.Warn("Error reading key", "key", key, "error", err)
 		return nil, err
 	}
 	return result, nil
@@ -104,7 +105,7 @@ func (s *service) Subscribe(ctx context.Context) error {
 						// No message available, continue polling
 						continue
 					}
-					log.Printf("Error reading from queue: %v", err)
+					slog.Warn("Error reading from queue: %v", "error", err)
 					time.Sleep(1 * time.Second)
 					continue
 				}

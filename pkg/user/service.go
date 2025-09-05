@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -88,7 +89,7 @@ func (s *service) getUser(ctx context.Context, itsc, name string) (*User, error)
 }
 
 func verifyToken(ctx context.Context, tokenString string) (*jwt.Token, error) {
-	keySet, err := jwk.Fetch(context.Background(), "https://login.microsoftonline.com/common/discovery/v2.0/keys")
+	keySet, err := jwk.Fetch(ctx, "https://login.microsoftonline.com/common/discovery/v2.0/keys")
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +119,7 @@ func verifyToken(ctx context.Context, tokenString string) (*jwt.Token, error) {
 func (s *service) ValidateSession(ctx context.Context, cookieString string) (*User, error) {
 	sessionId, err := getCookie(cookieString, "appSession")
 	if err != nil {
+		slog.Warn("could not get session cookie", "error", err)
 		return nil, fmt.Errorf("could not find request session with auth credentials: %w", err)
 	}
 	hmac := hmac.New(sha1.New, []byte(os.Getenv("SESSION_SECRET")))
@@ -126,6 +128,7 @@ func (s *service) ValidateSession(ctx context.Context, cookieString string) (*Us
 	var tokenSet TokenSet
 	cookie, err := s.cache.Read(ctx, key)
 	if err != nil {
+		slog.Warn("could not read session from cache", "error", err)
 		return nil, fmt.Errorf("could not find request session with auth credentials: %w", err)
 	}
 	if err := json.Unmarshal([]byte(cookie), &tokenSet); err != nil {
@@ -134,16 +137,19 @@ func (s *service) ValidateSession(ctx context.Context, cookieString string) (*Us
 
 	token, err := verifyToken(ctx, tokenSet.Data.IdToken)
 	if err != nil {
+		slog.Warn("failed to verify token", "error", err)
 		return nil, fmt.Errorf("cailed to verify token: %w", err)
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || !token.Valid {
+		slog.Warn("invalid token claims", "error", err)
 		return nil, errors.New("invalid token claims")
 	}
 
 	email, ok := claims["email"].(string)
 	if !ok {
+		slog.Warn("email claim not found in token", "error", err)
 		return nil, errors.New("email claim not found in token")
 	}
 	itsc := strings.Split(email, "@")[0]
@@ -151,6 +157,7 @@ func (s *service) ValidateSession(ctx context.Context, cookieString string) (*Us
 
 	user, err := s.getUser(ctx, itsc, name)
 	if err != nil {
+		slog.Warn("failed to get user from database", "error", err)
 		return nil, fmt.Errorf("failed to get user from database: %w", err)
 	}
 
