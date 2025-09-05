@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 )
@@ -45,8 +46,18 @@ func ScheduleGrading(s *service) echo.HandlerFunc {
 
 func ManualGradingTask(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		// Implementation of ManualGradingTask handler
-		return c.String(http.StatusOK, "ManualGradingTask called")
+		var req ManualGradingTaskRequest
+		if err := c.Bind(&req); err != nil {
+			return c.String(http.StatusBadRequest, "Invalid request body")
+		}
+		assignmentConfigId, err := strconv.Atoi(c.Param("assignmentConfigId"))
+		if err != nil {
+			return c.String(http.StatusBadRequest, "Invalid assignmentConfigId")
+		}
+		if err := s.ManualGradingTask(c.Request().Context(), assignmentConfigId, &req); err != nil {
+			return c.String(http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 }
 

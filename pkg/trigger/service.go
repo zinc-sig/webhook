@@ -461,6 +461,73 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 	return nil
 }
 
+func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int, req *ManualGradingTaskRequest) error {
+	query := getSelectedSubmissions
+	variables := map[string]interface{}{
+		"submissions": req.Submissions,
+	}
+	if len(req.Submissions) == 0 {
+		query = getLatestSubmissionsForAssignmentConfig
+		variables = map[string]interface{}{
+			"assignmentConfigId": assignmentConfigId,
+		}
+	}
+
+	graphqlReq := graphql.NewRequest(query)
+	for key, value := range variables {
+		graphqlReq.Var(key, value)
+	}
+
+	var graphqlResp struct {
+		Submissions []struct {
+			ID            int       `json:"id"`
+			ExtractedPath string    `json:"extracted_path"`
+			CreatedAt     time.Time `json:"created_at"`
+		} `json:"submissions"`
+	}
+
+	if len(req.Submissions) == 0 {
+		var resp struct {
+			AssignmentConfig struct {
+				Submissions []struct {
+					ID            int       `json:"id"`
+					ExtractedPath string    `json:"extracted_path"`
+					CreatedAt     time.Time `json:"created_at"`
+				} `json:"submissions"`
+			} `json:"assignmentConfig"`
+		}
+		if err := s.graphql.Run(ctx, graphqlReq, &resp); err != nil {
+			return fmt.Errorf("failed to get submissions: %s", err.Error())
+		}
+		graphqlResp.Submissions = resp.AssignmentConfig.Submissions
+	} else {
+		if err := s.graphql.Run(ctx, graphqlReq, &graphqlResp); err != nil {
+			return fmt.Errorf("failed to get submissions: %s", err.Error())
+		}
+	}
+
+	// Push job to redis
+	payload := map[string]interface{}{
+		"submissions":          graphqlResp.Submissions,
+		"assignment_config_id": assignmentConfigId,
+		"isTest":               false,
+		"initiatedBy":          req.InitiatedBy,
+	}
+
+	jsonPayload, err := json.Marshal(map[string]interface{}{
+		"job":     "manualGradingTask",
+		"payload": payload,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal job payload: %s", err.Error())
+	}
+
+	if err := s.cache.Publish(ctx, "zinc_queue:grader", jsonPayload); err != nil {
+		return fmt.Errorf("failed to push job to redis: %s", err.Error())
+	}
+	return nil
+}
+
 func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) error {
 	graphqlReq := graphql.NewRequest(getGradingSubmissions)
 	graphqlReq.Var("assignmentConfigId", payload.Payload.AssignmentConfigID)
@@ -493,11 +560,11 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 			"payload": payload,
 		})
 		if err != nil {
-			return fmt.Errorf("Failed to marshal job payload: %s", err.Error())
+			return fmt.Errorf("failed to marshal job payload: %s", err.Error())
 		}
 
 		if err := s.cache.Publish(ctx, "zinc_queue:grader", jsonPayload); err != nil {
-			return fmt.Errorf("Failed to push job to redis: %s", err.Error())
+			return fmt.Errorf("failed to push job to redis: %s", err.Error())
 		}
 	}
 	return nil
