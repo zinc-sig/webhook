@@ -44,6 +44,7 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 	e.POST("/trigger/scheduleGrading", ScheduleGrading(s))
 	e.POST("/trigger/manualGradingTask/:assignmentConfigId", ManualGradingTask(s))
 	e.POST("/trigger/gradingTask", GradingTask(s))
+	e.PUT("/grader/queues", UpdateGraderQueues(s))
 }
 
 func (s *service) SyncEnrollment(ctx context.Context) error {
@@ -696,5 +697,13 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 		}
 	}
 
+	return nil
+}
+
+func (s *service) UpdateGraderQueues(ctx context.Context, queues []string) error {
+	if err := s.cache.Put(ctx, "grader:queues", []byte(strings.Join(queues, ",")), 0); err != nil {
+		slog.Warn("Failed to update grader queues", "error", err)
+		return fmt.Errorf("failed to update grader queues: %s", err.Error())
+	}
 	return nil
 }

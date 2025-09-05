@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -50,7 +51,6 @@ type Service interface {
 
 type service struct {
 	client   *redis.Client
-	queues   []string
 	handlers map[string]MessageHandler
 }
 
@@ -98,7 +98,20 @@ func (s *service) Subscribe(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			// Block for up to 5 seconds waiting for a message
-			for _, queue := range s.queues {
+			data, err := s.Read(ctx, "grader:queues")
+			if err != nil {
+				slog.Warn("Failed to read grader queues from cache", "error", err)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			if data == nil {
+				slog.Info("No grader queues configured, waiting...")
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			queues := strings.Split(string(data), ",")
+
+			for _, queue := range queues {
 				result, err := s.client.BRPop(ctx, 5*time.Second, queue).Result()
 				if err != nil {
 					if err == redis.Nil {
