@@ -20,7 +20,7 @@ RUN go mod download
 COPY . .
 
 # Build the Go binary (adjust ./cmd/server as your package main)
-RUN go build -trimpath -ldflags="-s -w" -o /out/webhook .
+RUN go build -trimpath -ldflags="-s -w" -o /out/webhook ./cmd
 
 # -- Production stage: Use Chainguard minimal static image, non-root
 FROM cgr.dev/chainguard/static:latest AS runtime
