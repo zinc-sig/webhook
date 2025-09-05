@@ -28,6 +28,7 @@ func NewRouter(p ApiParams) http.Handler {
 	router.HidePort = true
 	router.Pre(middleware.RemoveTrailingSlash())
 	router.Use(middleware.Recover())
+	router.Use(middleware.RequestID())
 
 	router.GET("/", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})

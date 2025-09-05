@@ -12,25 +12,6 @@ import (
 	"github.com/machinebox/graphql"
 )
 
-const updateDecompressionResultForSubmission = `
-mutation updateDecompressionResultForSubmission($id: bigint!, $extractedPath: String, $failReason: String) {
-  update_submissions_by_pk(pk_columns: {id: $id}, _set: {extracted_path: $extractedPath, fail_reason: $failReason}) {
-    id
-  }
-}`
-
-type DecompressionRequest struct {
-	Event struct {
-		Data struct {
-			New struct {
-				ID         int    `json:"id"`
-				UploadName string `json:"upload_name"`
-				StoredName string `json:"stored_name"`
-			} `json:"new"`
-		} `json:"data"`
-	} `json:"event"`
-}
-
 func (h *Handler) DecompressSubmission(c echo.Context) error {
 	var req DecompressionRequest
 	if err := c.Bind(&req); err != nil {

@@ -12,7 +12,7 @@ func SyncEnrollment(s *service) echo.HandlerFunc {
 		if err := s.SyncEnrollment(c.Request().Context()); err != nil {
 			return c.String(http.StatusInternalServerError, err.Error())
 		}
-		return c.String(http.StatusOK, "SyncEnrollment called")
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 }
 
@@ -22,8 +22,10 @@ func DecompressSubmission(s *service) echo.HandlerFunc {
 		if err := c.Bind(&req); err != nil {
 			return c.String(http.StatusBadRequest, "Invalid request body")
 		}
-		s.DecompressSubmission(c.Request().Context(), req.Event.Data.New)
-		return c.String(http.StatusOK, "DecompressSubmission called")
+		if err := s.DecompressSubmission(c.Request().Context(), req.Event.Data.New); err != nil {
+			return c.String(http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 }
 
@@ -50,7 +52,13 @@ func ManualGradingTask(s *service) echo.HandlerFunc {
 
 func GradingTask(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		// Implementation of GradingTask handler
-		return c.String(http.StatusOK, "GradingTask called")
+		var req GradingTaskRequest
+		if err := c.Bind(&req); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		}
+		if err := s.GradingTask(c.Request().Context(), &req); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 }

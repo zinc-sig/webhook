@@ -9,18 +9,22 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/machinebox/graphql"
+	"github.com/zinc-sig/webhook/pkg/cache"
 	"go.uber.org/fx"
 )
 
 type ServiceParams struct {
 	fx.In
+	Cache         cache.Service
 	GraphQLClient *graphql.Client
 }
 
 type service struct {
+	cache   cache.Service
 	client  *http.Client
 	graphql *graphql.Client
 }
@@ -453,6 +457,48 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 	var resp struct{}
 	if err := s.graphql.Run(ctx, graphqlReq, &resp); err != nil {
 		return fmt.Errorf("failed to update report artifacts: %s", err.Error())
+	}
+	return nil
+}
+
+func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) error {
+	graphqlReq := graphql.NewRequest(getGradingSubmissions)
+	graphqlReq.Var("assignmentConfigId", payload.Payload.AssignmentConfigID)
+
+	var graphqlResp struct {
+		AssignmentConfig struct {
+			StopCollectionAt string `json:"stopCollectionAt"`
+			Submissions      []struct {
+				ID            int       `json:"id"`
+				ExtractedPath string    `json:"extracted_path"`
+				CreatedAt     time.Time `json:"created_at"`
+			} `json:"submissions"`
+		} `json:"assignmentConfig"`
+	}
+
+	if err := s.graphql.Run(ctx, graphqlReq, &graphqlResp); err != nil {
+		return fmt.Errorf("failed to fetch submissions: %s", err.Error())
+	}
+
+	if graphqlResp.AssignmentConfig.StopCollectionAt == payload.Payload.StopCollectionAt {
+		// Push job to redis
+		payload := map[string]interface{}{
+			"submissions":          graphqlResp.AssignmentConfig.Submissions,
+			"assignment_config_id": payload.Payload.AssignmentConfigID,
+			"isTest":               false,
+		}
+
+		jsonPayload, err := json.Marshal(map[string]interface{}{
+			"job":     "gradingTask",
+			"payload": payload,
+		})
+		if err != nil {
+			return fmt.Errorf("Failed to marshal job payload: %s", err.Error())
+		}
+
+		if err := s.cache.Publish(ctx, "zinc_queue:grader", jsonPayload); err != nil {
+			return fmt.Errorf("Failed to push job to redis: %s", err.Error())
+		}
 	}
 	return nil
 }
