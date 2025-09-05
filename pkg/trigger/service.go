@@ -626,3 +626,54 @@ func extractZip(submissionID int, storedName string) error {
 
 	return nil
 }
+
+func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) error {
+	var oldGrading GradingRow
+	if err := json.Unmarshal(event.Data.Old, &oldGrading); err != nil {
+		return fmt.Errorf("failed to unmarshal old grading data: %s", err.Error())
+	}
+	var newGrading GradingRow
+	if err := json.Unmarshal(event.Data.New, &newGrading); err != nil {
+		return fmt.Errorf("failed to unmarshal new grading data: %s", err.Error())
+	}
+	if (event.Op == "UPDATE" && oldGrading.StopCollectionAt != newGrading.StopCollectionAt) || event.Op == "INSERT" {
+		webhookURL := fmt.Sprintf("http://%s/trigger/gradingTask", os.Getenv("WEBHOOK_ADDR"))
+
+		payload := map[string]interface{}{
+			"type": "create_scheduled_event",
+			"args": map[string]interface{}{
+				"webhook":     webhookURL,
+				"schedule_at": newGrading.StopCollectionAt,
+				"payload": map[string]interface{}{
+					"assignment_config_id": newGrading.ID,
+					"stop_collection_at":   newGrading.StopCollectionAt,
+				},
+			},
+		}
+
+		jsonPayload, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request payload: %s", err.Error())
+		}
+
+		httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/query", os.Getenv("HASURA_URL")), strings.NewReader(string(jsonPayload)))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %s", err.Error())
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("X-Hasura-Admin-Secret", os.Getenv("HASURA_ADMIN_SECRET"))
+
+		client := &http.Client{}
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return fmt.Errorf("failed to send request to hasura: %s", err.Error())
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to schedule grading event")
+		}
+	}
+
+	return nil
+}
