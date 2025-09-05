@@ -68,7 +68,7 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 			return fmt.Errorf("failed to create semester for course %s: %s", course, err.Error())
 		}
 
-		courseID, err := s.addCourse(enrollmentMap.CrseCode, term, enrollmentMap.Classes[0].CrseTitle)
+		courseID, err := s.addCourse(ctx, enrollmentMap.CrseCode, term, enrollmentMap.Classes[0].CrseTitle)
 		if err != nil {
 			slog.Warn("Failed to add course", "course", course, "error", err)
 			return fmt.Errorf("failed to add course %s: %s", course, err.Error())
@@ -81,18 +81,18 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 			}
 		}
 
-		sections, err := s.addSections(courseID, sectionNames)
+		sections, err := s.addSections(ctx, courseID, sectionNames)
 		if err != nil {
 			slog.Warn("Failed to add sections", "course", course, "error", err)
 			return fmt.Errorf("failed to add sections for course %s: %s", course, err.Error())
 		}
 
-		if err := s.removeStudentsFromCourse(courseID); err != nil {
+		if err := s.removeStudentsFromCourse(ctx, courseID); err != nil {
 			slog.Warn("Failed to remove students from course", "course", course, "error", err)
 			return fmt.Errorf("failed to remove students from course %s: %s", course, err.Error())
 		}
 
-		if err := s.removeStudentsFromSection(courseID); err != nil {
+		if err := s.removeStudentsFromSection(ctx, courseID); err != nil {
 			slog.Warn("Failed to remove students from section", "course", course, "error", err)
 			return fmt.Errorf("failed to remove students from section for course %s: %s", course, err.Error())
 		}
@@ -105,7 +105,7 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 				}
 			}
 
-			studentUserIDs, err := s.getStudentUserIds(itscIDs)
+			studentUserIDs, err := s.getStudentUserIds(ctx, itscIDs)
 			if err != nil {
 				slog.Warn("Failed to get student user ids", "course", course, "error", err)
 				return fmt.Errorf("failed to get student user ids for course %s: %s", course, err.Error())
@@ -114,12 +114,12 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 			switch class.ClassType {
 			case "N":
 				sectionID := sections[class.Section]
-				if err := s.addStudentsToCourseSection(studentUserIDs, sectionID); err != nil {
+				if err := s.addStudentsToCourseSection(ctx, studentUserIDs, sectionID); err != nil {
 					slog.Warn("Failed to add students to course section", "course", course, "error", err)
 					return fmt.Errorf("failed to add students to course section for course %s: %s", course, err.Error())
 				}
 			case "E":
-				if err := s.addStudentsToCourse(studentUserIDs, courseID); err != nil {
+				if err := s.addStudentsToCourse(ctx, studentUserIDs, courseID); err != nil {
 					slog.Warn("Failed to add students to course", "course", course, "error", err)
 					return fmt.Errorf("failed to add students to course for course %s: %s", course, err.Error())
 				}
@@ -193,7 +193,7 @@ func (s *service) createSemesterIfNotExist(ctx context.Context, id int) error {
 	return s.graphql.Run(ctx, req, &resp)
 }
 
-func (s *service) addCourse(code string, semesterID int, title string) (int, error) {
+func (s *service) addCourse(ctx context.Context, code string, semesterID int, title string) (int, error) {
 	req := graphql.NewRequest(addCourse)
 	req.Var("code", code)
 	req.Var("semesterId", semesterID)
@@ -205,14 +205,14 @@ func (s *service) addCourse(code string, semesterID int, title string) (int, err
 		} `json:"createCourse"`
 	}
 
-	if err := s.graphql.Run(context.Background(), req, &resp); err != nil {
+	if err := s.graphql.Run(ctx, req, &resp); err != nil {
 		return 0, err
 	}
 
 	return resp.CreateCourse.ID, nil
 }
 
-func (s *service) addSections(courseID int, sectionNames []string) (map[string]int, error) {
+func (s *service) addSections(ctx context.Context, courseID int, sectionNames []string) (map[string]int, error) {
 	var sections []map[string]interface{}
 	for _, name := range sectionNames {
 		sections = append(sections, map[string]interface{}{"name": name, "course_id": courseID})
@@ -230,7 +230,7 @@ func (s *service) addSections(courseID int, sectionNames []string) (map[string]i
 		} `json:"batchCreateSection"`
 	}
 
-	if err := s.graphql.Run(context.Background(), req, &resp); err != nil {
+	if err := s.graphql.Run(ctx, req, &resp); err != nil {
 		return nil, err
 	}
 
@@ -242,23 +242,23 @@ func (s *service) addSections(courseID int, sectionNames []string) (map[string]i
 	return sectionMap, nil
 }
 
-func (s *service) removeStudentsFromCourse(courseID int) error {
+func (s *service) removeStudentsFromCourse(ctx context.Context, courseID int) error {
 	req := graphql.NewRequest(removeStudentsFromCourse)
 	req.Var("courseId", courseID)
 
 	var resp struct{}
-	return s.graphql.Run(context.Background(), req, &resp)
+	return s.graphql.Run(ctx, req, &resp)
 }
 
-func (s *service) removeStudentsFromSection(courseID int) error {
+func (s *service) removeStudentsFromSection(ctx context.Context, courseID int) error {
 	req := graphql.NewRequest(removeStudentsFromSection)
 	req.Var("courseId", courseID)
 
 	var resp struct{}
-	return s.graphql.Run(context.Background(), req, &resp)
+	return s.graphql.Run(ctx, req, &resp)
 }
 
-func (s *service) getStudentUserIds(itscIDs []string) ([]int, error) {
+func (s *service) getStudentUserIds(ctx context.Context, itscIDs []string) ([]int, error) {
 	req := graphql.NewRequest(getStudentUserIds)
 	req.Var("itscIds", itscIDs)
 
@@ -269,7 +269,7 @@ func (s *service) getStudentUserIds(itscIDs []string) ([]int, error) {
 		} `json:"users"`
 	}
 
-	if err := s.graphql.Run(context.Background(), req, &resp); err != nil {
+	if err := s.graphql.Run(ctx, req, &resp); err != nil {
 		return nil, err
 	}
 
@@ -311,7 +311,7 @@ func (s *service) getStudentUserIds(itscIDs []string) ([]int, error) {
 			} `json:"batchCreateUser"`
 		}
 
-		if err := s.graphql.Run(context.Background(), req, &addResp); err != nil {
+		if err := s.graphql.Run(ctx, req, &addResp); err != nil {
 			return nil, err
 		}
 
@@ -323,7 +323,7 @@ func (s *service) getStudentUserIds(itscIDs []string) ([]int, error) {
 	return userIDs, nil
 }
 
-func (s *service) addStudentsToCourseSection(studentUserIDs []int, sectionID int) error {
+func (s *service) addStudentsToCourseSection(ctx context.Context, studentUserIDs []int, sectionID int) error {
 	var users []map[string]interface{}
 	for _, userID := range studentUserIDs {
 		users = append(users, map[string]interface{}{"user_id": userID, "section_id": sectionID})
@@ -333,10 +333,10 @@ func (s *service) addStudentsToCourseSection(studentUserIDs []int, sectionID int
 	req.Var("users", users)
 
 	var resp struct{}
-	return s.graphql.Run(context.Background(), req, &resp)
+	return s.graphql.Run(ctx, req, &resp)
 }
 
-func (s *service) addStudentsToCourse(studentUserIDs []int, courseID int) error {
+func (s *service) addStudentsToCourse(ctx context.Context, studentUserIDs []int, courseID int) error {
 	var users []map[string]interface{}
 	for _, userID := range studentUserIDs {
 		users = append(users, map[string]interface{}{"user_id": userID, "course_id": courseID, "permission": 1})
@@ -346,7 +346,7 @@ func (s *service) addStudentsToCourse(studentUserIDs []int, courseID int) error 
 	req.Var("users", users)
 
 	var resp struct{}
-	return s.graphql.Run(context.Background(), req, &resp)
+	return s.graphql.Run(ctx, req, &resp)
 }
 
 func getSemesterNameAndYear(id string) (string, int) {
