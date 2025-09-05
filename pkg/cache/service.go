@@ -3,9 +3,11 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -45,12 +47,15 @@ type Service interface {
 	Read(ctx context.Context, key string) ([]byte, error)
 	Remove(ctx context.Context, key string) error
 	Publish(ctx context.Context, channel string, message []byte) error
+	LoadBalancePublish(ctx context.Context, channels []string, message []byte) error
+	Llen(ctx context.Context, channel string) (int64, error)
 	Subscribe(ctx context.Context) error
 	RegisterHandler(jobType string, handler MessageHandler)
 }
 
 type service struct {
 	client   *redis.Client
+	locker   sync.Mutex
 	handlers map[string]MessageHandler
 }
 
@@ -86,8 +91,48 @@ func (s *service) Remove(ctx context.Context, key string) error {
 	return s.client.Del(ctx, key).Err()
 }
 
+func (s *service) Llen(ctx context.Context, channel string) (int64, error) {
+	result, err := s.client.LLen(ctx, channel).Result()
+	if err == redis.Nil {
+		slog.Warn("Channel does not exist", "channel", channel)
+		return 0, nil // Channel does not exist
+	}
+	if err != nil {
+		slog.Warn("Error reading channel", "channel", channel, "error", err)
+		return 0, err
+	}
+	return result, nil
+}
+
 func (s *service) Publish(ctx context.Context, channel string, message []byte) error {
 	return s.client.RPush(ctx, channel, message).Err()
+}
+
+func (s *service) LoadBalancePublish(ctx context.Context, channels []string, message []byte) error {
+
+	s.locker.Lock()
+	defer s.locker.Unlock()
+
+	// Find the channel with the least number of messages
+	var targetChannel string
+	minLen := int64(-1)
+	for _, channel := range channels {
+		length, err := s.Llen(ctx, channel)
+		if err != nil {
+			slog.Warn("Failed to get length of channel", "channel", channel, "error", err)
+			continue
+		}
+		if minLen == -1 || length < minLen {
+			minLen = length
+			targetChannel = channel
+		}
+	}
+
+	if minLen < 0 {
+		return fmt.Errorf("failed to determine target channel for load balancing")
+	}
+
+	return s.client.RPush(ctx, targetChannel, message).Err()
 }
 
 func (s *service) Subscribe(ctx context.Context) error {
