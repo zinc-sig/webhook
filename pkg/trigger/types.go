@@ -21,6 +21,7 @@ type RowTriggerPayload struct {
 }
 
 type RowTriggerEvent struct {
+	Op   string      `json:"op"`
 	Data RowSnapshot `json:"data"`
 }
 
@@ -39,6 +40,11 @@ type ReportRow struct {
 	ID              int             `json:"id"`
 	PipelineResults json.RawMessage `json:"pipeline_results"`
 	IsFinal         bool            `json:"is_final"`
+}
+
+type GradingRow struct {
+	ID               int    `json:"id"`
+	StopCollectionAt string `json:"stop_collection_at"`
 }
 
 type PipelineResults struct {
