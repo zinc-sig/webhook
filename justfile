@@ -1,8 +1,8 @@
 build:
-  go build -o webhook main.go
+  go build -o bin/webhook -ldflags="-s -w" ./cmd
 
 run:
-  ./webhook
+  ./bin/webhook
 
 test:
   go test ./...
