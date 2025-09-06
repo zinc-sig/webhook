@@ -6,6 +6,10 @@ import (
 	"go.uber.org/fx"
 )
 
+type Config struct {
+	DSN string `mapstructure:"dsn" yaml:"dsn"`
+}
+
 var Module = fx.Module(
 	"cache",
 	fx.Provide(

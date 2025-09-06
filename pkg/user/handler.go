@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/zinc-sig/webhook/pkg/api"
 )
 
 func Identity(s *service) echo.HandlerFunc {
@@ -15,12 +16,12 @@ func Identity(s *service) echo.HandlerFunc {
 		var req IdentityRequest
 		if err := c.Bind(&req); err != nil {
 			slog.Warn("failed to bind request", "error", err)
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "Invalid request body", Message: err.Error()})
 		}
 		user, err := s.ValidateSession(c.Request().Context(), req.Headers.Cookie)
 		if err != nil {
 			slog.Warn("failed to validate session", "error", err)
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			return c.JSON(http.StatusUnauthorized, api.ErrorResponse{Error: "Unauthorized", Message: err.Error()})
 		}
 		allowedCourses := ""
 		if !user.IsAdmin {
