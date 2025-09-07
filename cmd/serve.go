@@ -17,7 +17,8 @@ var serveCmd = &cobra.Command{
 			panic(fmt.Errorf("failed to get dev flag: %v", err))
 		}
 		app.New(app.Options{
-			Debug: debug,
+			ConfigPath: configPath,
+			Debug:      debug,
 		}).Run()
 	},
 }

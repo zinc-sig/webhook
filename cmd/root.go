@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var configPath string
+
 var rootCmd = &cobra.Command{
 	Use:   "webhook",
 	Short: "a server program for processing and weaving together the zinc system",
@@ -29,4 +31,5 @@ func Execute() {
 
 func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "prints version of the application")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "c", "config file (default is $XDG_CONFIG_DIR/config.yaml)")
 }

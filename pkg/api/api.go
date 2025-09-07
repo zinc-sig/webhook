@@ -22,6 +22,15 @@ type ApiParams struct {
 	Handlers []Handler `group:"handlers"`
 }
 
+type Response struct {
+	Status string `json:"status"`
+}
+
+type ErrorResponse struct {
+	Error   string `json:"error"`
+	Message string `json:"message,omitempty"`
+}
+
 func NewRouter(p ApiParams) http.Handler {
 	router := echo.New()
 	router.HideBanner = true
@@ -71,7 +80,7 @@ var Module = fx.Options(
 						slog.Warn("Failed to start http server", "error", err)
 					}
 				}()
-				return httpServer.ListenAndServe()
+				return nil
 			},
 			OnStop: func(ctx context.Context) error {
 				slog.Info("Stopping webhook server")

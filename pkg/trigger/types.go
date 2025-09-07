@@ -2,20 +2,6 @@ package trigger
 
 import "encoding/json"
 
-type EnrollmentMap struct {
-	Term     string `json:"term"`
-	CrseCode string `json:"crseCode"`
-	Classes  []struct {
-		CrseTitle string `json:"crseTitle"`
-		Section   string `json:"section"`
-		ClassType string `json:"classType"`
-		Students  []struct {
-			EmailAddr    string `json:"emailAddr"`
-			EnrollStatus string `json:"enrollStatus"`
-		} `json:"students"`
-	} `json:"classes"`
-}
-
 type RowTriggerPayload struct {
 	Event RowTriggerEvent `json:"event"`
 }

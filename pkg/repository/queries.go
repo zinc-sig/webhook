@@ -1,4 +1,26 @@
-package trigger
+package repository
+
+const GetUserByITSC = `
+query GetUserByITSC($itsc: String!) {
+  users(where: {itsc: {_eq: $itsc}}) {
+    id
+    name
+		itsc
+    isAdmin: is_admin
+    courses {
+      course_id
+    }
+  }
+}
+`
+
+const CreateUser = `
+mutation CreateUser($itsc: String!, $name: String!) {
+  insert_users_one(object: {itsc: $itsc, name: $name}) {
+    id
+  }
+}
+`
 
 const createSemester = `
 mutation createSemester($id: bigint!, $name: String!, $year: Int!) {

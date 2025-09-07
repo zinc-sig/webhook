@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"go.uber.org/fx"
 )
 
 type MessageHandler func(ctx context.Context, jobType string, payload json.RawMessage) error
@@ -59,11 +59,16 @@ type service struct {
 	handlers map[string]MessageHandler
 }
 
-func NewService() Service {
+type ServiceParams struct {
+	fx.In
+	Config *Config
+}
+
+func NewService(p ServiceParams) Service {
 	client := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS_URL"),
-		Password: "", // no password set
-		DB:       0,  // use default DB
+		Addr:     p.Config.DSN, // e.g., "localhost:6379"
+		Password: "",           // no password set
+		DB:       0,            // use default DB
 	})
 	return &service{
 		client: client,
