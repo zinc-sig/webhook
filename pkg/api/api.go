@@ -80,7 +80,7 @@ var Module = fx.Options(
 						slog.Warn("Failed to start http server", "error", err)
 					}
 				}()
-				return httpServer.ListenAndServe()
+				return nil
 			},
 			OnStop: func(ctx context.Context) error {
 				slog.Info("Stopping webhook server")

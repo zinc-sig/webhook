@@ -20,9 +20,9 @@ type Options struct {
 
 type Config struct {
 	fx.Out     `yaml:"-"`
-	Redis      cache.Config      `mapstructure:"redis" yaml:"redis"`
-	Repository repository.Config `mapstructure:"repository" yaml:"repository"`
-	Auth       auth.Config       `mapstructure:"auth" yaml:"auth"`
+	Redis      *cache.Config      `mapstructure:"redis" yaml:"redis"`
+	Repository *repository.Config `mapstructure:"repository" yaml:"repository"`
+	Auth       *auth.Config       `mapstructure:"auth" yaml:"auth"`
 }
 
 func Load(filename string) error {
@@ -59,7 +59,7 @@ func New(options Options) *fx.App {
 		user.Module,
 		api.Module,
 	}
-	if options.Debug {
+	if !options.Debug {
 		m = append(m, fx.NopLogger)
 	}
 
