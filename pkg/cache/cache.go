@@ -18,7 +18,7 @@ var Module = fx.Module(
 	fx.Invoke(func(lifecycle fx.Lifecycle, cache Service) {
 		lifecycle.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
-				go cache.Subscribe(ctx)
+				go cache.Subscribe(context.Background())
 				return nil
 			},
 		})
