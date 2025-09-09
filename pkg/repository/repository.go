@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/machinebox/graphql"
@@ -60,7 +61,10 @@ type Params struct {
 
 func NewRepository(p Params) Repository {
 	httpclient := &http.Client{Transport: &AuthTransport{AdminSecret: p.Config.HasuraAdminSecret}}
-	client := graphql.NewClient(p.Config.HasuraURL, graphql.WithHTTPClient(httpclient))
+	client := graphql.NewClient(
+		fmt.Sprintf("%s/v1/graphql", p.Config.HasuraURL),
+		graphql.WithHTTPClient(httpclient),
+	)
 	return &repository{
 		client:    client,
 		isoConfig: p.Config.IntegrationConfig,
