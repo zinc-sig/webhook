@@ -2,7 +2,6 @@ package trigger
 
 import (
 	"encoding/json"
-	"time"
 )
 
 type RowTriggerPayload struct {
@@ -20,12 +19,12 @@ type RowSnapshot struct {
 }
 
 type SubmissionRow struct {
-	ID                 int       `json:"id"`
-	UploadName         string    `json:"upload_name"`
-	StoredName         string    `json:"stored_name"`
-	AssignmentConfigID int       `json:"assignment_config_id"`
-	UserID             int       `json:"user_id"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID                 int    `json:"id"`
+	UploadName         string `json:"upload_name"`
+	StoredName         string `json:"stored_name"`
+	AssignmentConfigID int    `json:"assignment_config_id"`
+	UserID             int    `json:"user_id"`
+	CreatedAt          string `json:"created_at"`
 }
 
 type ReportRow struct {

@@ -161,6 +161,10 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 	if err != nil {
 		return fmt.Errorf("failed to get grading policy: %s", err.Error())
 	}
+	submittedAt, err := time.Parse("2006-01-02T15:04:05", submission.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to parse submission created at: %s", err.Error())
+	}
 	if gradeImmediately {
 		slog.Info("triggered grader for:", "submission", submission.ID)
 		payload, err := json.Marshal(map[string]interface{}{
@@ -168,7 +172,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 				{
 					ID:            submission.ID,
 					ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
-					CreatedAt:     submission.CreatedAt,
+					CreatedAt:     submittedAt,
 				},
 			},
 			"isTest":      isTest,

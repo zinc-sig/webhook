@@ -21,7 +21,7 @@ type JobMessage struct {
 }
 
 func (s *service) processMessage(ctx context.Context, queue, rawMessage string) {
-	slog.Info("Received message: %s", "msg", rawMessage)
+	slog.Info("Received message: %s", "msg", rawMessage, "queue", queue)
 
 	var msg JobMessage
 	if err := json.Unmarshal([]byte(rawMessage), &msg); err != nil {
