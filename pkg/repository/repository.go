@@ -40,6 +40,7 @@ type Repository interface {
 	GetGradingSubmissions(ctx context.Context, assignmentConfigID int) (*Assignment, error)
 	GetLatestOrSelectedSubmissions(ctx context.Context, assignmentConfigID int, selectedSubmissionIDs []int) ([]Submission, error)
 	ExtractZip(submissionID int, storedName string) error
+	GetGradingPolicy(ctx context.Context, assignmentConfigID int, userID int) (bool, bool, error)
 }
 
 type AuthTransport struct {

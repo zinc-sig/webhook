@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/zinc-sig/webhook/pkg/api"
@@ -19,6 +20,12 @@ import (
 const (
 	LoopbackAddress = "127.0.0.1"
 )
+
+type GradingPayload struct {
+	ID            int       `json:"id"`
+	ExtractedPath string    `json:"extracted_path"`
+	CreatedAt     time.Time `json:"created_at"`
+}
 
 type ServiceParams struct {
 	fx.In
@@ -146,7 +153,46 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		return s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, "", err.Error())
 	}
 
-	return s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, fmt.Sprintf("extracted/%d", submission.ID), "")
+	if err := s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, fmt.Sprintf("extracted/%d", submission.ID), ""); err != nil {
+		return fmt.Errorf("failed to update extracted submission entry: %s", err.Error())
+	}
+
+	gradeImmediately, isTest, err := s.repository.GetGradingPolicy(ctx, submission.AssignmentConfigID, submission.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to get grading policy: %s", err.Error())
+	}
+	if gradeImmediately {
+		slog.Info("triggered grader for:", "submission", submission.ID)
+		payload, err := json.Marshal(map[string]interface{}{
+			"submissions": []GradingPayload{
+				{
+					ID:            submission.ID,
+					ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
+					CreatedAt:     submission.CreatedAt,
+				},
+			},
+			"isTest":      isTest,
+			"initiatedBy": nil,
+		})
+		if err != nil {
+			slog.Warn("Failed to marshal grading payload", "error", err)
+			return fmt.Errorf("failed to marshal grading payload: %s", err.Error())
+		}
+		data, err := s.cache.Read(ctx, cache.QueueKey)
+		if err != nil {
+			slog.Warn("Failed to read grader queues", "error", err)
+			return fmt.Errorf("failed to read grader queues: %s", err.Error())
+		}
+		if data == nil {
+			return fmt.Errorf("no grader queues configured")
+		}
+		queues := strings.Split(string(data), ",")
+		if err := s.cache.LoadBalancePublish(ctx, queues, payload); err != nil {
+			slog.Warn("Failed to publish grading payload", "error", err)
+			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
+		}
+	}
+	return nil
 }
 
 func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMessage) error {
@@ -263,9 +309,18 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		return fmt.Errorf("failed to marshal job payload: %s", err.Error())
 	}
 
-	if err := s.cache.Publish(ctx, "zinc_queue:grader", jsonPayload); err != nil {
-		slog.Warn("Failed to push job to redis", "error", err)
-		return fmt.Errorf("failed to push job to redis: %s", err.Error())
+	data, err := s.cache.Read(ctx, cache.QueueKey)
+	if err != nil {
+		slog.Warn("Failed to read grader queues", "error", err)
+		return fmt.Errorf("failed to read grader queues: %s", err.Error())
+	}
+	if data == nil {
+		return fmt.Errorf("no grader queues configured")
+	}
+	queues := strings.Split(string(data), ",")
+	if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
+		slog.Warn("Failed to publish grading payload", "error", err)
+		return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 	}
 	return nil
 }
@@ -354,7 +409,7 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 }
 
 func (s *service) UpdateGraderQueues(ctx context.Context, queues []string) error {
-	if err := s.cache.Put(ctx, "grader:queues", []byte(strings.Join(queues, ",")), 0); err != nil {
+	if err := s.cache.Put(ctx, cache.QueueKey, []byte(strings.Join(queues, ",")), 0); err != nil {
 		slog.Warn("Failed to update grader queues", "error", err)
 		return fmt.Errorf("failed to update grader queues: %s", err.Error())
 	}

@@ -119,6 +119,24 @@ mutation updateDecompressionResultForSubmission($id: bigint!, $extractedPath: St
   }
 }`
 
+const getGradingPolicy = `
+query getGradingPolicy($id: bigint!, $userId: bigint!) {
+  assignmentConfig(id: $id) {
+    gradeImmediately
+    assignment {
+      course {
+        users(where: {
+          user_id: {
+            _eq: $userId
+          }
+        }) {
+          permission
+        }
+      }
+    }
+  }
+}`
+
 const getGradingSubmissions = `
 query getGradingSubmissions($assignmentConfigId: bigint!) {
   assignmentConfig(id: $assignmentConfigId) {

@@ -10,6 +10,10 @@ type Config struct {
 	DSN string `mapstructure:"dsn" yaml:"dsn"`
 }
 
+const (
+	QueueKey = "grader:queues"
+)
+
 var Module = fx.Module(
 	"cache",
 	fx.Provide(

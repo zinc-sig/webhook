@@ -177,6 +177,11 @@ func (m *MockRepository) ExtractZip(submissionID int, storedName string) error {
 	return args.Error(0)
 }
 
+func (m *MockRepository) GetGradingPolicy(ctx context.Context, assignmentConfigID, userID int) (bool, bool, error) {
+	args := m.Called(ctx, assignmentConfigID, userID)
+	return args.Bool(0), args.Bool(1), args.Error(2)
+}
+
 func TestIdentity(t *testing.T) {
 	tests := []struct {
 		name           string

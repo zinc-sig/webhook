@@ -148,7 +148,7 @@ func (s *service) Subscribe(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			// Block for up to 5 seconds waiting for a message
-			data, err := s.Read(ctx, "grader:queues")
+			data, err := s.Read(ctx, QueueKey)
 			if err != nil {
 				slog.Warn("Failed to read grader queues from cache", "error", err)
 				time.Sleep(1 * time.Second)

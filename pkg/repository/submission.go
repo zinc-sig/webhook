@@ -45,6 +45,31 @@ func (r *repository) UpdateExtractedSubmissionEntry(ctx context.Context, id int,
 	return r.client.Run(ctx, req, &resp)
 }
 
+func (r *repository) GetGradingPolicy(ctx context.Context, assignmentConfigID int, userID int) (bool, bool, error) {
+	req := graphql.NewRequest(getGradingPolicy)
+	req.Var("id", assignmentConfigID)
+	req.Var("userId", userID)
+
+	var resp struct {
+		AssignmentConfig struct {
+			GradeImmediately bool `json:"gradeImmediately"`
+			Assignment       struct {
+				Course struct {
+					Users []struct {
+						Permission int `json:"permission"`
+					} `json:"users"`
+				} `json:"course"`
+			} `json:"assignment"`
+		} `json:"assignmentConfig"`
+	}
+	if err := r.client.Run(ctx, req, &resp); err != nil {
+		slog.Warn("failed to get grading policy", "assignmentConfigID", assignmentConfigID, "userID", userID, "error", err)
+		return false, false, fmt.Errorf("failed to get grading policy: %s", err.Error())
+	}
+
+	return resp.AssignmentConfig.GradeImmediately, resp.AssignmentConfig.Assignment.Course.Users[0].Permission > 1, nil
+}
+
 func (r *repository) GetGradingSubmissions(ctx context.Context, assignmentConfigID int) (*Assignment, error) {
 	graphqlReq := graphql.NewRequest(getGradingSubmissions)
 	graphqlReq.Var("assignmentConfigId", assignmentConfigID)
