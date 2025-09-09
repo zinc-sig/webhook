@@ -6,18 +6,23 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"github.com/zinc-sig/webhook/pkg/api"
 	"github.com/zinc-sig/webhook/pkg/cache"
 	"github.com/zinc-sig/webhook/pkg/repository"
 	"go.uber.org/fx"
 )
 
+const (
+	LoopbackAddress = "127.0.0.1"
+)
+
 type ServiceParams struct {
 	fx.In
+	Config     *repository.Config
 	Cache      cache.Service
 	Repository repository.Repository
 }
@@ -25,12 +30,14 @@ type ServiceParams struct {
 type service struct {
 	cache      cache.Service
 	repository repository.Repository
+	config     *repository.Config
 }
 
 func NewService(p ServiceParams) *service {
 	return &service{
 		cache:      p.Cache,
 		repository: p.Repository,
+		config:     p.Config,
 	}
 }
 
@@ -305,7 +312,7 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 		return fmt.Errorf("failed to unmarshal new grading data: %s", err.Error())
 	}
 	if (event.Op == "UPDATE" && oldGrading.StopCollectionAt != newGrading.StopCollectionAt) || event.Op == "INSERT" {
-		webhookURL := fmt.Sprintf("http://%s/trigger/gradingTask", os.Getenv("WEBHOOK_ADDR"))
+		webhookURL := fmt.Sprintf("http://%s:%d/trigger/gradingTask", LoopbackAddress, api.Port)
 
 		payload := map[string]interface{}{
 			"type": "create_scheduled_event",
@@ -324,12 +331,12 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 			return fmt.Errorf("failed to marshal request payload: %s", err.Error())
 		}
 
-		httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/query", os.Getenv("HASURA_URL")), strings.NewReader(string(jsonPayload)))
+		httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/query", s.config.HasuraURL), strings.NewReader(string(jsonPayload)))
 		if err != nil {
 			return fmt.Errorf("failed to create request: %s", err.Error())
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-Hasura-Admin-Secret", os.Getenv("HASURA_ADMIN_SECRET"))
+		httpReq.Header.Set("X-Hasura-Admin-Secret", s.config.HasuraAdminSecret)
 
 		client := &http.Client{}
 		resp, err := client.Do(httpReq)

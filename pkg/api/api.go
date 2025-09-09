@@ -15,7 +15,7 @@ type Handler interface {
 	RegisterRoutes(e *echo.Echo)
 }
 
-const port = 4000
+const Port = 4000
 
 type ApiParams struct {
 	fx.In
@@ -51,7 +51,7 @@ func NewRouter(p ApiParams) http.Handler {
 
 func NewHttp(router http.Handler, lifecycle fx.Lifecycle) *http.Server {
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf(":%d", Port),
 		Handler: router,
 	}
 
@@ -74,7 +74,7 @@ var Module = fx.Options(
 	fx.Invoke(func(lifecycle fx.Lifecycle, httpServer *http.Server) {
 		lifecycle.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
-				slog.Info("Starting webhook server at :", "port", port)
+				slog.Info("Starting webhook server at :", "port", Port)
 				go func() {
 					if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 						slog.Warn("Failed to start http server", "error", err)
