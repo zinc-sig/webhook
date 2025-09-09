@@ -194,6 +194,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		for _, queue := range strings.Split(string(data), ",") {
 			queues = append(queues, fmt.Sprintf("%s:grader", queue))
 		}
+		slog.Info("sending job payload", "payload", string(payload))
 		if err := s.cache.LoadBalancePublish(ctx, queues, payload); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
