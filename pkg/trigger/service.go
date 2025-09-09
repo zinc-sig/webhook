@@ -306,16 +306,21 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		return fmt.Errorf("failed to get submissions: %s", err.Error())
 	}
 	// Push job to redis
-	payload := map[string]interface{}{
+	payload, err := json.Marshal(map[string]interface{}{
 		"submissions":          submissions,
 		"assignment_config_id": assignmentConfigId,
 		"isTest":               false,
 		"initiatedBy":          req.InitiatedBy,
+	})
+
+	if err != nil {
+		slog.Warn("Failed to marshal job payload", "error", err)
+		return fmt.Errorf("failed to marshal job payload: %s", err.Error())
 	}
 
 	jsonPayload, err := json.Marshal(map[string]interface{}{
 		"job":     "manualGradingTask",
-		"payload": payload,
+		"payload": string(payload),
 	})
 	if err != nil {
 		slog.Warn("Failed to marshal job payload", "error", err)
@@ -350,24 +355,40 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 
 	if *submissions.AssignmentConfig.StopCollectionAt == payload.Payload.StopCollectionAt {
 		// Push job to redis
-		payload := map[string]interface{}{
+		payload, err := json.Marshal(map[string]interface{}{
 			"submissions":          submissions.AssignmentConfig.Submissions,
 			"assignment_config_id": payload.Payload.AssignmentConfigID,
 			"isTest":               false,
-		}
-
-		jsonPayload, err := json.Marshal(map[string]interface{}{
-			"job":     "gradingTask",
-			"payload": payload,
 		})
+
 		if err != nil {
 			slog.Warn("Failed to marshal job payload", "error", err)
 			return fmt.Errorf("failed to marshal job payload: %s", err.Error())
 		}
 
-		if err := s.cache.Publish(ctx, "zinc_queue:grader", jsonPayload); err != nil {
-			slog.Warn("Failed to push job to redis", "error", err)
-			return fmt.Errorf("failed to push job to redis: %s", err.Error())
+		jsonPayload, err := json.Marshal(map[string]interface{}{
+			"job":     "gradingTask",
+			"payload": string(payload),
+		})
+		if err != nil {
+			slog.Warn("Failed to marshal job payload", "error", err)
+			return fmt.Errorf("failed to marshal job payload: %s", err.Error())
+		}
+		data, err := s.cache.Read(ctx, cache.QueueKey)
+		if err != nil {
+			slog.Warn("Failed to read grader queues", "error", err)
+			return fmt.Errorf("failed to read grader queues: %s", err.Error())
+		}
+		if data == nil {
+			return fmt.Errorf("no grader queues configured")
+		}
+		var queues []string
+		for _, queue := range strings.Split(string(data), ",") {
+			queues = append(queues, fmt.Sprintf("%s:grader", queue))
+		}
+		if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
+			slog.Warn("Failed to publish grading payload", "error", err)
+			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
 	}
 	return nil
