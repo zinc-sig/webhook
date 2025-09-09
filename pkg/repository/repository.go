@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/machinebox/graphql"
 	"go.uber.org/fx"
@@ -9,6 +10,7 @@ import (
 
 type Config struct {
 	HasuraURL         string                  `mapstructure:"hasura_url" yaml:"hasura_url"`
+	HasuraAdminSecret string                  `mapstructure:"hasura_admin_secret" yaml:"hasura_admin_secret"`
 	IntegrationConfig EnrollmentServiceConfig `mapstructure:"iso" yaml:"iso"`
 }
 
@@ -37,6 +39,15 @@ type Repository interface {
 	GetLatestOrSelectedSubmissions(ctx context.Context, assignmentConfigID int, selectedSubmissionIDs []int) ([]Submission, error)
 }
 
+type AuthTransport struct {
+	AdminSecret string
+}
+
+func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Add("X-Hasura-Admin-Secret", t.AdminSecret)
+	return http.DefaultTransport.RoundTrip(req)
+}
+
 type repository struct {
 	client    *graphql.Client
 	isoConfig EnrollmentServiceConfig
@@ -48,7 +59,8 @@ type Params struct {
 }
 
 func NewRepository(p Params) Repository {
-	client := graphql.NewClient(p.Config.HasuraURL)
+	httpclient := &http.Client{Transport: &AuthTransport{AdminSecret: p.Config.HasuraAdminSecret}}
+	client := graphql.NewClient(p.Config.HasuraURL, graphql.WithHTTPClient(httpclient))
 	return &repository{
 		client:    client,
 		isoConfig: p.Config.IntegrationConfig,
