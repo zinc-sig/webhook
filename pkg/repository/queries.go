@@ -7,6 +7,7 @@ query GetUserByITSC($itsc: String!) {
     name
 		itsc
     isAdmin
+    hasTeachingRole
     courses {
       course_id
     }
@@ -16,9 +17,12 @@ query GetUserByITSC($itsc: String!) {
 
 const CreateUser = `
 mutation CreateUser($itsc: String!, $name: String!) {
-  insert_users_one(object: {itsc: $itsc, name: $name}) {
-    id
-  }
+  createUser(
+    object:{
+      itsc: $itsc
+      name: $name
+    }
+  ){ id }
 }
 `
 
@@ -102,16 +106,35 @@ mutation removeStudentsFromSection($courseId: bigint!) {
 
 const updateDecompressionResultForSubmission = `
 mutation updateDecompressionResultForSubmission($id: bigint!, $extractedPath: String, $failReason: String) {
-  update_submissions_by_pk(pk_columns: {id: $id}, _set: {extracted_path: $extractedPath, fail_reason: $failReason}) {
+  updateSubmission(
+    pk_columns: {
+      id: $id
+    },
+    _set: {
+      extracted_path: $extractedPath
+      fail_reason: $failReason
+    }
+  ) {
     id
   }
 }`
 
 const getGradingSubmissions = `
 query getGradingSubmissions($assignmentConfigId: bigint!) {
-  assignmentConfig: assignment_configs_by_pk(id: $assignmentConfigId) {
-    stopCollectionAt: stop_collection_at
-    submissions(distinct_on: user_id, order_by: {user_id: asc, created_at: desc}) {
+  assignmentConfig(id: $assignmentConfigId) {
+    stopCollectionAt
+    submissions(
+      distinct_on: [user_id]
+      order_by: [
+        { user_id: desc }
+        { created_at: desc }
+      ]
+      where: {
+        extracted_path: {
+          _is_null: false
+        }
+      }
+    ) {
       id
       extracted_path
       created_at
@@ -121,8 +144,19 @@ query getGradingSubmissions($assignmentConfigId: bigint!) {
 
 const getLatestSubmissionsForAssignmentConfig = `
 query getLatestSubmissionsForAssignmentConfig($assignmentConfigId: bigint!) {
-  assignmentConfig: assignment_configs_by_pk(id: $assignmentConfigId) {
-    submissions(distinct_on: user_id, order_by: {user_id: asc, created_at: desc}) {
+  assignmentConfig(id: $assignmentConfigId) {
+    submissions(
+      distinct_on: [user_id]
+      order_by: [
+        { user_id: desc }
+        { created_at: desc }
+      ]
+      where: {
+        extracted_path: {
+          _is_null: false
+        }
+      }
+    ) {
       id
       extracted_path
       created_at
@@ -132,7 +166,13 @@ query getLatestSubmissionsForAssignmentConfig($assignmentConfigId: bigint!) {
 
 const getSelectedSubmissions = `
 query getSelectedSubmissions($submissions: [bigint!]) {
-  submissions(where: {id: {_in: $submissions}}) {
+   submissions(
+    where: {
+      id: {
+        _in: $submissions
+      }
+    }
+  ) {
     id
     extracted_path
     created_at
@@ -141,7 +181,15 @@ query getSelectedSubmissions($submissions: [bigint!]) {
 
 const addReportArtifacts = `
 mutation addReportArtifacts($id: bigint!, $sanitizedReports: jsonb!, $grade: jsonb!) {
-  update_reports_by_pk(pk_columns: {id: $id}, _set: {sanitized_pipeline_results: $sanitizedReports, grade: $grade}) {
+  updateReport(
+    pk_columns: {
+      id: $id
+    }
+    _set: {
+      grade: $grade
+      sanitizedReports: $sanitizedReports
+    }
+  ) {
     id
   }
 }`

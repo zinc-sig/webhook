@@ -101,12 +101,14 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 	temporaryResolvePath := fmt.Sprintf("/tmp/%d", submissionID)
 
 	if err := os.MkdirAll(temporaryResolvePath, os.ModePerm); err != nil {
-		return err
+		slog.Warn("Failed to create temporary directory", "error", err)
+		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
 	reader, err := zip.OpenReader(file)
 	if err != nil {
-		return err
+		slog.Warn("Failed to open zip file", "error", err)
+		return fmt.Errorf("failed to open zip file: %w", err)
 	}
 	defer reader.Close()
 
@@ -114,6 +116,7 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 		fpath := filepath.Join(temporaryResolvePath, f.Name)
 
 		if !strings.HasPrefix(fpath, filepath.Clean(temporaryResolvePath)+string(os.PathSeparator)) {
+			slog.Warn("Illegal file path in zip", "filePath", fpath)
 			return fmt.Errorf("%s: illegal file path", fpath)
 		}
 
@@ -123,17 +126,20 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 		}
 
 		if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-			return err
+			slog.Warn("Failed to create directory for file in zip", "error", err)
+			return fmt.Errorf("failed to create directory for file: %w", err)
 		}
 
 		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 		if err != nil {
-			return err
+			slog.Warn("Failed to open output file", "filePath", fpath, "error", err)
+			return fmt.Errorf("failed to open output file: %w", err)
 		}
 
 		rc, err := f.Open()
 		if err != nil {
-			return err
+			slog.Warn("Failed to open file in zip", "filePath", fpath, "error", err)
+			return fmt.Errorf("failed to open file in zip: %w", err)
 		}
 
 		_, err = io.Copy(outFile, rc)
@@ -142,13 +148,15 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 		rc.Close()
 
 		if err != nil {
-			return err
+			slog.Warn("Failed to copy file contents", "filePath", fpath, "error", err)
+			return fmt.Errorf("failed to copy file contents: %w", err)
 		}
 	}
 
 	files, err := os.ReadDir(temporaryResolvePath)
 	if err != nil {
-		return err
+		slog.Warn("Failed to read directory", "error", err)
+		return fmt.Errorf("failed to read directory: %w", err)
 	}
 
 	if len(files) >= 1 {
@@ -157,7 +165,8 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 			sourcePath = fmt.Sprintf("%s/%s", temporaryResolvePath, files[0].Name())
 		}
 		if err := os.Rename(sourcePath, extractToPath); err != nil {
-			return err
+			slog.Warn("Failed to rename directory", "error", err)
+			return fmt.Errorf("failed to rename directory: %w", err)
 		}
 	} else {
 		return fmt.Errorf("empty directory")
