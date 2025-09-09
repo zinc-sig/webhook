@@ -164,13 +164,56 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 		if len(files) == 1 && files[0].IsDir() {
 			sourcePath = fmt.Sprintf("%s/%s", temporaryResolvePath, files[0].Name())
 		}
-		if err := os.Rename(sourcePath, extractToPath); err != nil {
-			slog.Warn("Failed to rename directory", "error", err)
-			return fmt.Errorf("failed to rename directory: %w", err)
+		if err := moveDirectory(sourcePath, extractToPath); err != nil {
+			return err
 		}
 	} else {
 		return fmt.Errorf("empty directory")
 	}
 
 	return nil
+}
+
+func moveDirectory(src, dest string) error {
+	// First, copy the directory
+	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Create a relative path to maintain the structure
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(dest, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, info.Mode())
+		}
+
+		// Copy the file
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		destFile, err := os.Create(destPath)
+		if err != nil {
+			return err
+		}
+		defer destFile.Close()
+
+		_, err = io.Copy(destFile, srcFile)
+		return err
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to copy directory: %w", err)
+	}
+
+	// If copy is successful, remove the original directory
+	return os.RemoveAll(src)
 }
