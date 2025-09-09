@@ -6,7 +6,7 @@ query GetUserByITSC($itsc: String!) {
     id
     name
 		itsc
-    isAdmin: is_admin
+    isAdmin
     courses {
       course_id
     }
