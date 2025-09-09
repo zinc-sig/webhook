@@ -1,9 +1,14 @@
 package repository
 
 import (
+	"archive/zip"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/machinebox/graphql"
@@ -87,4 +92,76 @@ func (r *repository) GetLatestOrSelectedSubmissions(ctx context.Context, assignm
 		}
 	}
 	return graphqlResp.Submissions, nil
+}
+
+func (r *repository) ExtractZip(submissionID int, storedName string) error {
+
+	file := fmt.Sprintf("%s/%s", r.sharedMountPath, storedName)
+	extractToPath := fmt.Sprintf("%s/extracted/%d", r.sharedMountPath, submissionID)
+	temporaryResolvePath := fmt.Sprintf("/tmp/%d", submissionID)
+
+	if err := os.MkdirAll(temporaryResolvePath, os.ModePerm); err != nil {
+		return err
+	}
+
+	reader, err := zip.OpenReader(file)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	for _, f := range reader.File {
+		fpath := filepath.Join(temporaryResolvePath, f.Name)
+
+		if !strings.HasPrefix(fpath, filepath.Clean(temporaryResolvePath)+string(os.PathSeparator)) {
+			return fmt.Errorf("%s: illegal file path", fpath)
+		}
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(fpath, os.ModePerm)
+			continue
+		}
+
+		if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+			return err
+		}
+
+		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(outFile, rc)
+
+		outFile.Close()
+		rc.Close()
+
+		if err != nil {
+			return err
+		}
+	}
+
+	files, err := os.ReadDir(temporaryResolvePath)
+	if err != nil {
+		return err
+	}
+
+	if len(files) >= 1 {
+		sourcePath := temporaryResolvePath
+		if len(files) == 1 && files[0].IsDir() {
+			sourcePath = fmt.Sprintf("%s/%s", temporaryResolvePath, files[0].Name())
+		}
+		if err := os.Rename(sourcePath, extractToPath); err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("empty directory")
+	}
+
+	return nil
 }

@@ -172,6 +172,11 @@ func (m *MockRepository) GetLatestOrSelectedSubmissions(ctx context.Context, ass
 	return args.Get(0).([]repository.Submission), args.Error(1)
 }
 
+func (m *MockRepository) ExtractZip(submissionID int, storedName string) error {
+	args := m.Called(submissionID, storedName)
+	return args.Error(0)
+}
+
 func TestIdentity(t *testing.T) {
 	tests := []struct {
 		name           string

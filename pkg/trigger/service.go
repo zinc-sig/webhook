@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -136,7 +135,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		return s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, "", "Unsupported archive format")
 	}
 
-	if err := extractZip(submission.ID, submission.StoredName); err != nil {
+	if err := s.repository.ExtractZip(submission.ID, submission.StoredName); err != nil {
 		return s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, "", err.Error())
 	}
 
@@ -293,45 +292,6 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 			return fmt.Errorf("failed to push job to redis: %s", err.Error())
 		}
 	}
-	return nil
-}
-
-func extractZip(submissionID int, storedName string) error {
-	mountPath := os.Getenv("SHARED_MOUNT_PATH")
-	if mountPath == "" {
-		mountPath = "/home/system/workspace"
-	}
-
-	file := fmt.Sprintf("%s/%s", mountPath, storedName)
-	extractToPath := fmt.Sprintf("%s/extracted/%d", mountPath, submissionID)
-	temporaryResolvePath := fmt.Sprintf("/tmp/%d", submissionID)
-
-	if err := os.MkdirAll(temporaryResolvePath, os.ModePerm); err != nil {
-		return err
-	}
-
-	cmd := exec.Command("unzip", file, "-d", temporaryResolvePath)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	files, err := os.ReadDir(temporaryResolvePath)
-	if err != nil {
-		return err
-	}
-
-	if len(files) >= 1 {
-		sourcePath := temporaryResolvePath
-		if len(files) == 1 && files[0].IsDir() {
-			sourcePath = fmt.Sprintf("%s/%s", temporaryResolvePath, files[0].Name())
-		}
-		if err := os.Rename(sourcePath, extractToPath); err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("empty directory")
-	}
-
 	return nil
 }
 

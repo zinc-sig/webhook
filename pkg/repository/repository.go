@@ -12,6 +12,7 @@ import (
 type Config struct {
 	HasuraURL         string                  `mapstructure:"hasura_url" yaml:"hasura_url"`
 	HasuraAdminSecret string                  `mapstructure:"hasura_admin_secret" yaml:"hasura_admin_secret"`
+	SharedMountPath   string                  `mapstructure:"shared_mount_path" yaml:"shared_mount_path"`
 	IntegrationConfig EnrollmentServiceConfig `mapstructure:"iso" yaml:"iso"`
 }
 
@@ -38,6 +39,7 @@ type Repository interface {
 	UpdateReportEntry(ctx context.Context, report map[string]interface{}) error
 	GetGradingSubmissions(ctx context.Context, assignmentConfigID int) (*Assignment, error)
 	GetLatestOrSelectedSubmissions(ctx context.Context, assignmentConfigID int, selectedSubmissionIDs []int) ([]Submission, error)
+	ExtractZip(submissionID int, storedName string) error
 }
 
 type AuthTransport struct {
@@ -50,8 +52,9 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 type repository struct {
-	client    *graphql.Client
-	isoConfig EnrollmentServiceConfig
+	sharedMountPath string
+	client          *graphql.Client
+	isoConfig       EnrollmentServiceConfig
 }
 
 type Params struct {
@@ -66,8 +69,9 @@ func NewRepository(p Params) Repository {
 		graphql.WithHTTPClient(httpclient),
 	)
 	return &repository{
-		client:    client,
-		isoConfig: p.Config.IntegrationConfig,
+		client:          client,
+		isoConfig:       p.Config.IntegrationConfig,
+		sharedMountPath: p.Config.SharedMountPath,
 	}
 }
 
