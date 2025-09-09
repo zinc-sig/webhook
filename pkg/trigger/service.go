@@ -181,7 +181,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		})
 		job, err := json.Marshal(map[string]interface{}{
 			"job":     "gradingTask",
-			"payload": payload,
+			"payload": string(payload),
 		})
 		if err != nil {
 			slog.Warn("Failed to marshal grading payload", "error", err)
