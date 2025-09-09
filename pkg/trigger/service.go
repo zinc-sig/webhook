@@ -423,7 +423,7 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 			return fmt.Errorf("failed to marshal request payload: %s", err.Error())
 		}
 
-		httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/query", s.config.HasuraURL), strings.NewReader(string(jsonPayload)))
+		httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/metadata", s.config.HasuraURL), strings.NewReader(string(jsonPayload)))
 		if err != nil {
 			return fmt.Errorf("failed to create request: %s", err.Error())
 		}
