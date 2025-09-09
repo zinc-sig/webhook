@@ -190,7 +190,10 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		if data == nil {
 			return fmt.Errorf("no grader queues configured")
 		}
-		queues := strings.Split(string(data), ",")
+		var queues []string
+		for _, queue := range strings.Split(string(data), ",") {
+			queues = append(queues, fmt.Sprintf("%s:grader", queue))
+		}
 		if err := s.cache.LoadBalancePublish(ctx, queues, payload); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
@@ -321,7 +324,10 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	if data == nil {
 		return fmt.Errorf("no grader queues configured")
 	}
-	queues := strings.Split(string(data), ",")
+	var queues []string
+	for _, queue := range strings.Split(string(data), ",") {
+		queues = append(queues, fmt.Sprintf("%s:grader", queue))
+	}
 	if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
 		slog.Warn("Failed to publish grading payload", "error", err)
 		return fmt.Errorf("failed to publish grading payload: %s", err.Error())

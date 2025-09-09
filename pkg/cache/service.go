@@ -159,7 +159,10 @@ func (s *service) Subscribe(ctx context.Context) error {
 				time.Sleep(5 * time.Second)
 				continue
 			}
-			queues := strings.Split(string(data), ",")
+			var queues []string
+			for _, queue := range strings.Split(string(data), ",") {
+				queues = append(queues, fmt.Sprintf("%s:grader", queue))
+			}
 
 			for _, queue := range queues {
 				result, err := s.client.BRPop(ctx, 5*time.Second, queue).Result()
