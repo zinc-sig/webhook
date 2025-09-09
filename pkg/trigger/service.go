@@ -168,16 +168,19 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 	if gradeImmediately {
 		slog.Info("triggered grader for:", "submission", submission.ID)
 		payload, err := json.Marshal(map[string]interface{}{
-			"submissions": []GradingPayload{
-				{
-					ID:            submission.ID,
-					ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
-					CreatedAt:     submittedAt,
+			"job": "gradingTask",
+			"payload": map[string]interface{}{
+				"submissions": []GradingPayload{
+					{
+						ID:            submission.ID,
+						ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
+						CreatedAt:     submittedAt,
+					},
 				},
+				"isTest":               isTest,
+				"assignment_config_id": submission.AssignmentConfigID,
+				"initiatedBy":          nil,
 			},
-			"isTest":               isTest,
-			"assignment_config_id": submission.AssignmentConfigID,
-			"initiatedBy":          nil,
 		})
 		if err != nil {
 			slog.Warn("Failed to marshal grading payload", "error", err)
