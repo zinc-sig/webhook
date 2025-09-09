@@ -175,8 +175,9 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 					CreatedAt:     submittedAt,
 				},
 			},
-			"isTest":      isTest,
-			"initiatedBy": nil,
+			"isTest":               isTest,
+			"assignment_config_id": submission.AssignmentConfigID,
+			"initiatedBy":          nil,
 		})
 		if err != nil {
 			slog.Warn("Failed to marshal grading payload", "error", err)
