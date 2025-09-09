@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -141,7 +142,9 @@ func (r *repository) AddSections(ctx context.Context, courseID int, sectionNames
 	}
 
 	if err := r.client.Run(ctx, req, &resp); err != nil {
-		return nil, err
+		m, _ := json.Marshal(resp)
+		slog.Error("error adding sections", "response", string(m))
+		return nil, fmt.Errorf("failed to add sections: %w", err)
 	}
 
 	sectionMap := make(map[string]int)
@@ -161,8 +164,13 @@ func (r *repository) AddStudentsToCourseSection(ctx context.Context, studentUser
 	req := graphql.NewRequest(addStudentsToCourseSection)
 	req.Var("users", users)
 
-	var resp struct{}
-	return r.client.Run(ctx, req, &resp)
+	var resp map[string]interface{}
+	if err := r.client.Run(ctx, req, &resp); err != nil {
+		m, _ := json.Marshal(resp)
+		slog.Error("error adding students to course section", "response", string(m))
+		return fmt.Errorf("failed to add students to course section: %w", err)
+	}
+	return nil
 }
 
 func (r *repository) AddStudentsToCourse(ctx context.Context, studentUserIDs []int, courseID int) error {
@@ -174,24 +182,39 @@ func (r *repository) AddStudentsToCourse(ctx context.Context, studentUserIDs []i
 	req := graphql.NewRequest(addStudentsToCourse)
 	req.Var("users", users)
 
-	var resp struct{}
-	return r.client.Run(ctx, req, &resp)
+	var resp map[string]interface{}
+	if err := r.client.Run(ctx, req, &resp); err != nil {
+		m, _ := json.Marshal(resp)
+		slog.Error("error adding students to course", "response", string(m))
+		return fmt.Errorf("failed to add students to course: %w", err)
+	}
+	return nil
 }
 
 func (r *repository) RemoveStudentsFromSection(ctx context.Context, courseID int) error {
 	req := graphql.NewRequest(removeStudentsFromSection)
 	req.Var("courseId", courseID)
 
-	var resp struct{}
-	return r.client.Run(ctx, req, &resp)
+	var resp map[string]interface{}
+	if err := r.client.Run(ctx, req, &resp); err != nil {
+		m, _ := json.Marshal(resp)
+		slog.Error("error removing students from section", "response", string(m))
+		return fmt.Errorf("failed to remove students from section: %w", err)
+	}
+	return nil
 }
 
 func (r *repository) RemoveStudentsFromCourse(ctx context.Context, courseID int) error {
 	req := graphql.NewRequest(removeStudentsFromCourse)
 	req.Var("courseId", courseID)
 
-	var resp struct{}
-	return r.client.Run(ctx, req, &resp)
+	var resp map[string]interface{}
+	if err := r.client.Run(ctx, req, &resp); err != nil {
+		m, _ := json.Marshal(resp)
+		slog.Error("error removing students from course", "response", string(m))
+		return fmt.Errorf("failed to remove students from course: %w", err)
+	}
+	return nil
 }
 
 func (r *repository) CreateSemesterIfNotExist(ctx context.Context, id int) error {
@@ -201,6 +224,11 @@ func (r *repository) CreateSemesterIfNotExist(ctx context.Context, id int) error
 	req.Var("name", name)
 	req.Var("year", year)
 
-	var resp struct{}
-	return r.client.Run(ctx, req, &resp)
+	var resp map[string]interface{}
+	if err := r.client.Run(ctx, req, &resp); err != nil {
+		m, _ := json.Marshal(resp)
+		slog.Error("error creating semester", "response", string(m))
+		return fmt.Errorf("failed to create semester: %w", err)
+	}
+	return nil
 }
