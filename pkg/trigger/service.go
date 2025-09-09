@@ -168,19 +168,20 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 	if gradeImmediately {
 		slog.Info("triggered grader for:", "submission", submission.ID)
 		payload, err := json.Marshal(map[string]interface{}{
-			"job": "gradingTask",
-			"payload": map[string]interface{}{
-				"submissions": []GradingPayload{
-					{
-						ID:            submission.ID,
-						ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
-						CreatedAt:     submittedAt,
-					},
+			"submissions": []GradingPayload{
+				{
+					ID:            submission.ID,
+					ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
+					CreatedAt:     submittedAt,
 				},
-				"isTest":               isTest,
-				"assignment_config_id": submission.AssignmentConfigID,
-				"initiatedBy":          nil,
 			},
+			"isTest":               isTest,
+			"assignment_config_id": submission.AssignmentConfigID,
+			"initiatedBy":          nil,
+		})
+		job, err := json.Marshal(map[string]interface{}{
+			"job":     "gradingTask",
+			"payload": payload,
 		})
 		if err != nil {
 			slog.Warn("Failed to marshal grading payload", "error", err)
@@ -198,8 +199,8 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		for _, queue := range strings.Split(string(data), ",") {
 			queues = append(queues, fmt.Sprintf("%s:grader", queue))
 		}
-		slog.Info("sending job payload", "payload", string(payload))
-		if err := s.cache.LoadBalancePublish(ctx, queues, payload); err != nil {
+		slog.Info("sending job payload", "payload", string(job))
+		if err := s.cache.LoadBalancePublish(ctx, queues, job); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
