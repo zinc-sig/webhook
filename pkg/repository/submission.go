@@ -9,9 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/machinebox/graphql"
 )
+
+type TimeWithoutZone string
+
+func (t TimeWithoutZone) Time() time.Time {
+	parsedTime, _ := time.Parse("2006-01-02T15:04:05", string(t))
+	return parsedTime
+}
 
 type Assignment struct {
 	AssignmentConfig struct {
@@ -21,9 +29,9 @@ type Assignment struct {
 }
 
 type Submission struct {
-	ID            int    `json:"id"`
-	ExtractedPath string `json:"extracted_path"`
-	CreatedAt     string `json:"created_at"`
+	ID            int             `json:"id"`
+	ExtractedPath string          `json:"extracted_path"`
+	CreatedAt     TimeWithoutZone `json:"created_at"`
 }
 
 func (r *repository) UpdateExtractedSubmissionEntry(ctx context.Context, id int, extractedPath, failReason string) error {

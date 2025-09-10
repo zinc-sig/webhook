@@ -161,7 +161,6 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 	if err != nil {
 		return fmt.Errorf("failed to get grading policy: %s", err.Error())
 	}
-	submittedAt, err := time.Parse("2006-01-02T15:04:05", submission.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to parse submission created at: %s", err.Error())
 	}
@@ -172,7 +171,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 				{
 					ID:            submission.ID,
 					ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
-					CreatedAt:     submittedAt,
+					CreatedAt:     submission.CreatedAt.Time(),
 				},
 			},
 			"isTest":               isTest,
@@ -309,7 +308,6 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	var gradingPayloads []GradingPayload
 
 	for _, submission := range submissions {
-		submittedAt, err := time.Parse("2006-01-02T15:04:05", submission.CreatedAt)
 		if err != nil {
 			slog.Warn("Failed to parse submission created at", "submissionID", submission.ID, "error", err)
 			return fmt.Errorf("failed to parse submission created at: %s", err.Error())
@@ -317,7 +315,7 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		gradingPayloads = append(gradingPayloads, GradingPayload{
 			ID:            submission.ID,
 			ExtractedPath: submission.ExtractedPath,
-			CreatedAt:     submittedAt,
+			CreatedAt:     submission.CreatedAt.Time(),
 		})
 	}
 
@@ -374,7 +372,6 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 		// Push job to redis
 		gradingPayloads := make([]GradingPayload, 0, len(submissions.AssignmentConfig.Submissions))
 		for _, submission := range submissions.AssignmentConfig.Submissions {
-			submittedAt, err := time.Parse("2006-01-02T15:04:05", submission.CreatedAt)
 			if err != nil {
 				slog.Warn("Failed to parse submission created at", "submissionID", submission.ID, "error", err)
 				return fmt.Errorf("failed to parse submission created at: %s", err.Error())
@@ -382,7 +379,7 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 			gradingPayloads = append(gradingPayloads, GradingPayload{
 				ID:            submission.ID,
 				ExtractedPath: submission.ExtractedPath,
-				CreatedAt:     submittedAt,
+				CreatedAt:     submission.CreatedAt.Time(),
 			})
 		}
 		payload, err := json.Marshal(map[string]interface{}{
