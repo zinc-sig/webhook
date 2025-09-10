@@ -293,6 +293,7 @@ func processValgrindReports(stageReport json.RawMessage, isFinal bool) []Valgrin
 func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioTestReport {
 	var stdioTestReports []StdioTestReport
 	if err := json.Unmarshal(stageReport, &stdioTestReports); err != nil {
+		slog.Warn("Failed to unmarshal stdio test reports", "error", err)
 		return nil
 	}
 
