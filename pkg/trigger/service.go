@@ -245,7 +245,7 @@ func processValgrindReports(stageReport json.RawMessage, isFinal bool) []Valgrin
 	if err := json.Unmarshal(stageReport, &valgrindReports); err != nil {
 		return nil
 	}
-	
+
 	for i, report := range valgrindReports {
 		switch report.Visibility {
 		case "ALWAYS_HIDDEN":
@@ -253,7 +253,7 @@ func processValgrindReports(stageReport json.RawMessage, isFinal bool) []Valgrin
 			valgrindReports[i].Errors = []ValgrindReportError{}
 			// TypeScript returns the modified report here
 			continue
-			
+
 		case "VISIBLE_AFTER_GRADING":
 			if !isFinal {
 				valgrindReports[i].Stdout = []string{}
@@ -264,7 +264,7 @@ func processValgrindReports(stageReport json.RawMessage, isFinal bool) []Valgrin
 			// BUG: TypeScript is missing 'return report' here at line 28
 			// This causes execution to continue to line 29 and beyond
 			// In Go, we don't add 'continue' to replicate this bug
-			
+
 		case "VISIBLE_AFTER_GRADING_IF_FAILED":
 			// TypeScript condition: !is_final || !report.isCorrect (line 30)
 			// This means: hide data if not final OR if test failed
@@ -277,14 +277,14 @@ func processValgrindReports(stageReport json.RawMessage, isFinal bool) []Valgrin
 			// BUG: TypeScript is missing 'return report' here at line 34
 			// This causes execution to continue to case 'ALWAYS_VISIBLE'
 			// In Go, we don't add 'continue' to replicate this bug
-			
+
 		case "ALWAYS_VISIBLE":
 		default:
 			// TypeScript returns unmodified report here
 			// In Go, we do nothing and let the loop continue
 		}
 	}
-	
+
 	return valgrindReports
 }
 
@@ -295,7 +295,7 @@ func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioT
 	if err := json.Unmarshal(stageReport, &stdioTestReports); err != nil {
 		return nil
 	}
-	
+
 	for i, report := range stdioTestReports {
 		switch report.Visibility {
 		case "ALWAYS_HIDDEN":
@@ -304,7 +304,7 @@ func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioT
 			stdioTestReports[i].Diff = []string{}
 			// TypeScript returns the modified report here
 			continue
-			
+
 		case "VISIBLE_AFTER_GRADING":
 			if !isFinal {
 				stdioTestReports[i].Expect = []string{}
@@ -315,7 +315,7 @@ func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioT
 			// BUG: TypeScript is missing 'return report' here at line 53
 			// This causes execution to continue to line 54 and beyond
 			// In Go, we don't add 'continue' to replicate this bug
-			
+
 		case "VISIBLE_AFTER_GRADING_IF_FAILED":
 			// TypeScript condition: !is_final || !report.isCorrect (line 55)
 			// This means: hide data if not final OR if test failed
@@ -328,14 +328,14 @@ func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioT
 			// BUG: TypeScript is missing 'return report' here at line 59
 			// This causes execution to continue to case 'ALWAYS_VISIBLE'
 			// In Go, we don't add 'continue' to replicate this bug
-			
+
 		case "ALWAYS_VISIBLE":
 		default:
 			// TypeScript returns unmodified report here
 			// In Go, we do nothing and let the loop continue
 		}
 	}
-	
+
 	return stdioTestReports
 }
 
@@ -360,7 +360,7 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 			// This causes the 'valgrind' case to fall through to 'stdioTest'
 			// In Go, we explicitly use 'fallthrough' to replicate this bug
 			fallthrough
-			
+
 		case "stdioTest":
 			// BUG: Due to fallthrough from 'valgrind' case, this will execute
 			// for BOTH 'valgrind' AND 'stdioTest' stages
@@ -370,7 +370,7 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 				censoredReports[stage] = processed
 			}
 			// TypeScript has 'break' here at line 65, Go doesn't need it
-			
+
 		case "score":
 			// TypeScript extracts first element of score array (lines 66-69)
 			var scoreReportObj []map[string]interface{}
@@ -378,7 +378,7 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 				grade = scoreReportObj[0]
 			}
 			// TypeScript has 'break' here at line 69, Go doesn't need it
-			
+
 		default:
 			// Pass through any other stages unchanged (lines 70-72)
 			censoredReports[stage] = stageReport
@@ -427,7 +427,7 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	}
 
 	// Build job payload
-	jsonPayload, err := s.buildGradingJobPayload("manualGradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
+	jsonPayload, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
 	if err != nil {
 		return err
 	}
