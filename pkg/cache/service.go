@@ -200,13 +200,10 @@ func (s *service) Subscribe(ctx context.Context) error {
 				time.Sleep(5 * time.Second)
 				continue
 			}
-			var queues []string
-			for _, queue := range strings.Split(string(data), ",") {
-				queues = append(queues, fmt.Sprintf("%s:api", queue))
-			}
+			queues := strings.Split(string(data), ",")
 
 			for _, queue := range queues {
-				result, err := s.client.BRPop(ctx, 5*time.Second, queue).Result()
+				result, err := s.client.BRPop(ctx, 5*time.Second, fmt.Sprintf("%s:api", queue)).Result()
 				if err != nil {
 					if err == redis.Nil {
 						// No message available, continue polling
