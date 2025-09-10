@@ -25,8 +25,13 @@ var Module = fx.Module(
 		lifecycle.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
 				cache.RegisterHandler("doneGrading", func(ctx context.Context, jobType, queue string, payload json.RawMessage) error {
+					var payloadJson string
+					if err := json.Unmarshal(payload, &payloadJson); err != nil {
+						slog.Warn("Failed to unmarshal payload", "error", err)
+						return err
+					}
 					var data DoneGradingPayload
-					if err := json.Unmarshal(payload, &data); err != nil {
+					if err := json.Unmarshal([]byte(payloadJson), &data); err != nil {
 						slog.Warn("Failed to unmarshal payload", "error", err)
 						return err
 					}
