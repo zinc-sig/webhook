@@ -20,6 +20,13 @@ type JobMessage struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
+type DoneGradingPayload struct {
+	Reports []struct {
+		ID           int `json:"id"`
+		SubmissionID int `json:"submission_id"`
+	} `json:"reports"`
+}
+
 func (s *service) processMessage(ctx context.Context, queue, rawMessage string) {
 	slog.Info("Received message: %s", "msg", rawMessage, "queue", queue)
 
