@@ -145,7 +145,11 @@ func (s *service) LoadBalancePublish(ctx context.Context, channels []string, mes
 		return fmt.Errorf("failed to determine target channel for load balancing")
 	}
 	slog.Info("Publishing to channel: %s with %d messages", "channel", targetChannel, "length", minLen)
-	return s.client.RPush(ctx, targetChannel, message).Err()
+	err := s.client.RPush(ctx, targetChannel, message).Err()
+	if err == nil {
+		slog.Info("successfully published to queue", "targetChannel", targetChannel, "queueLength", minLen+1, "messageSize", len(message))
+	}
+	return err
 }
 
 func (s *service) Subscribe(ctx context.Context) error {

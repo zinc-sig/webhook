@@ -36,6 +36,13 @@ var Module = fx.Module(
 						return err
 					}
 					slog.Info("Processing job", "type", jobType, "queue", queue, "payload", data, "is_batch", len(data.Reports) > 1)
+					
+					// Log successful processing
+					var reportIDs []int
+					for _, report := range data.Reports {
+						reportIDs = append(reportIDs, report.ID)
+					}
+					slog.Info("doneGrading processed successfully", "reportIDs", reportIDs, "reportCount", len(data.Reports), "queue", queue)
 					return nil
 				})
 				go cache.Subscribe(context.Background())

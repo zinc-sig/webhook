@@ -105,5 +105,6 @@ func (s *service) ValidateSession(ctx context.Context, cookieString string) (*re
 		return nil, fmt.Errorf("failed to get user from database: %w", err)
 	}
 
+	slog.Info("session validated successfully", "itsc", itsc, "userID", user.ID)
 	return user, nil
 }
