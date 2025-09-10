@@ -161,9 +161,6 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 	if err != nil {
 		return fmt.Errorf("failed to get grading policy: %s", err.Error())
 	}
-	if err != nil {
-		return fmt.Errorf("failed to parse submission created at: %s", err.Error())
-	}
 	if gradeImmediately {
 		slog.Info("triggered grader for:", "submission", submission.ID)
 		payload, err := json.Marshal(map[string]interface{}{
@@ -308,10 +305,6 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	var gradingPayloads []GradingPayload
 
 	for _, submission := range submissions {
-		if err != nil {
-			slog.Warn("Failed to parse submission created at", "submissionID", submission.ID, "error", err)
-			return fmt.Errorf("failed to parse submission created at: %s", err.Error())
-		}
 		gradingPayloads = append(gradingPayloads, GradingPayload{
 			ID:            submission.ID,
 			ExtractedPath: submission.ExtractedPath,
@@ -372,10 +365,6 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 		// Push job to redis
 		gradingPayloads := make([]GradingPayload, 0, len(submissions.AssignmentConfig.Submissions))
 		for _, submission := range submissions.AssignmentConfig.Submissions {
-			if err != nil {
-				slog.Warn("Failed to parse submission created at", "submissionID", submission.ID, "error", err)
-				return fmt.Errorf("failed to parse submission created at: %s", err.Error())
-			}
 			gradingPayloads = append(gradingPayloads, GradingPayload{
 				ID:            submission.ID,
 				ExtractedPath: submission.ExtractedPath,
