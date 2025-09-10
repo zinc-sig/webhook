@@ -3,12 +3,13 @@ package api
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 )
 
 type Handler interface {
@@ -20,6 +21,7 @@ const Port = 4000
 type ApiParams struct {
 	fx.In
 	Handlers []Handler `group:"handlers"`
+	Logger   *zap.SugaredLogger
 }
 
 type Response struct {
@@ -35,6 +37,7 @@ func NewRouter(p ApiParams) http.Handler {
 	router := echo.New()
 	router.HideBanner = true
 	router.HidePort = true
+	router.Use(otelecho.Middleware("hk.ust.cse.zinc.webhook"))
 	router.Pre(middleware.RemoveTrailingSlash())
 	router.Use(middleware.Recover())
 	router.Use(middleware.RequestID())
@@ -49,7 +52,7 @@ func NewRouter(p ApiParams) http.Handler {
 		LogURI:    true,
 		LogStatus: true,
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			slog.Info("request",
+			p.Logger.Infow("request",
 				"URI", v.URI,
 				"method", v.Method,
 				"status", v.Status,
@@ -84,19 +87,19 @@ var Module = fx.Options(
 		NewRouter,
 		NewHttp,
 	),
-	fx.Invoke(func(lifecycle fx.Lifecycle, httpServer *http.Server) {
+	fx.Invoke(func(lifecycle fx.Lifecycle, httpServer *http.Server, logger *zap.SugaredLogger) {
 		lifecycle.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
-				slog.Info("Starting webhook server at :", "port", Port)
+				logger.Infow("Starting webhook server", "context", ctx, "port", Port)
 				go func() {
 					if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-						slog.Warn("Failed to start http server", "error", err)
+						logger.Warnw("Failed to start http server", "error", err)
 					}
 				}()
 				return nil
 			},
 			OnStop: func(ctx context.Context) error {
-				slog.Info("Stopping webhook server")
+				logger.Infow("Stopping webhook server", "context", ctx)
 				return httpServer.Shutdown(context.Background())
 			},
 		})

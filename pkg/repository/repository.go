@@ -7,6 +7,7 @@ import (
 
 	"github.com/machinebox/graphql"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 )
 
 type Config struct {
@@ -56,11 +57,13 @@ type repository struct {
 	sharedMountPath string
 	client          *graphql.Client
 	isoConfig       EnrollmentServiceConfig
+	logger          *zap.SugaredLogger
 }
 
 type Params struct {
 	fx.In
 	Config *Config
+	Logger *zap.SugaredLogger
 }
 
 func NewRepository(p Params) Repository {
@@ -73,6 +76,7 @@ func NewRepository(p Params) Repository {
 		client:          client,
 		isoConfig:       p.Config.IntegrationConfig,
 		sharedMountPath: p.Config.SharedMountPath,
+		logger:          p.Logger,
 	}
 }
 

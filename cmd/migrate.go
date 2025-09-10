@@ -3,13 +3,13 @@ package main
 import (
 	"embed"
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 //go:embed assets/*
@@ -36,14 +36,18 @@ var migrateCmd = &cobra.Command{
 	Short: "run database schema migrations against database",
 	Run: func(cmd *cobra.Command, args []string) {
 		dsn := cmd.Flag("dsn").Value.String()
+		logger, _ := zap.NewProduction()
+		sugar := logger.Sugar()
+		defer logger.Sync()
+		
 		if dsn == "" {
-			slog.Error("a valid DSN is required to perform migrations")
+			sugar.Error("a valid DSN is required to perform migrations")
 			os.Exit(1)
 		}
 		if err := ApplyMigrations(dsn); err != nil {
 			panic(err)
 		}
-		slog.Info("SQL migrations has been successfully applied")
+		sugar.Info("SQL migrations has been successfully applied")
 	},
 }
 

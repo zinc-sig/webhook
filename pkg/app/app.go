@@ -7,7 +7,9 @@ import (
 	"github.com/zinc-sig/webhook/pkg/api"
 	"github.com/zinc-sig/webhook/pkg/auth"
 	"github.com/zinc-sig/webhook/pkg/cache"
+	"github.com/zinc-sig/webhook/pkg/logger"
 	"github.com/zinc-sig/webhook/pkg/repository"
+	"github.com/zinc-sig/webhook/pkg/telemetry"
 	"github.com/zinc-sig/webhook/pkg/trigger"
 	"github.com/zinc-sig/webhook/pkg/user"
 	"go.uber.org/fx"
@@ -23,6 +25,7 @@ type Config struct {
 	Redis      *cache.Config      `mapstructure:"redis" yaml:"redis"`
 	Repository *repository.Config `mapstructure:"repository" yaml:"repository"`
 	Auth       *auth.Config       `mapstructure:"auth" yaml:"auth"`
+	Telemetry  *telemetry.Config  `mapstructure:"telemetry" yaml:"telemetry"`
 }
 
 func Load(filename string) error {
@@ -58,9 +61,8 @@ func New(options Options) *fx.App {
 		trigger.Module,
 		user.Module,
 		api.Module,
-	}
-	if !options.Debug {
-		m = append(m, fx.NopLogger)
+		logger.Module(options.Debug),
+		telemetry.Module,
 	}
 
 	fmt.Println("==> ZINC webhook configuration:")

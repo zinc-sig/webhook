@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,7 +69,7 @@ func (r *repository) GetGradingPolicy(ctx context.Context, assignmentConfigID in
 		} `json:"assignmentConfig"`
 	}
 	if err := r.client.Run(ctx, req, &resp); err != nil {
-		slog.Warn("failed to get grading policy", "assignmentConfigID", assignmentConfigID, "userID", userID, "error", err)
+		r.logger.Warnw("failed to get grading policy", "context", ctx, "assignmentConfigID", assignmentConfigID, "userID", userID, "error", err)
 		return false, false, fmt.Errorf("failed to get grading policy: %s", err.Error())
 	}
 
@@ -83,7 +82,7 @@ func (r *repository) GetGradingSubmissions(ctx context.Context, assignmentConfig
 
 	var graphqlResp Assignment
 	if err := r.client.Run(ctx, graphqlReq, &graphqlResp); err != nil {
-		slog.Warn("failed to get grading submissions", "assignmentConfigID", assignmentConfigID, "error", err)
+		r.logger.Warnw("failed to get grading submissions", "context", ctx, "assignmentConfigID", assignmentConfigID, "error", err)
 		return nil, fmt.Errorf("failed to get grading submissions: %s", err.Error())
 	}
 	return &graphqlResp, nil
@@ -113,13 +112,13 @@ func (r *repository) GetLatestOrSelectedSubmissions(ctx context.Context, assignm
 	if len(selectedSubmissionIDs) == 0 {
 		var resp Assignment
 		if err := r.client.Run(ctx, graphqlReq, &resp); err != nil {
-			slog.Warn("Failed to get submissions", "error", err)
+			r.logger.Warnw("Failed to get submissions", "context", ctx, "error", err)
 			return nil, fmt.Errorf("failed to get submissions: %s", err.Error())
 		}
 		graphqlResp.Submissions = resp.AssignmentConfig.Submissions
 	} else {
 		if err := r.client.Run(ctx, graphqlReq, &graphqlResp); err != nil {
-			slog.Warn("Failed to get submissions", "error", err)
+			r.logger.Warnw("Failed to get submissions", "context", ctx, "error", err)
 			return nil, fmt.Errorf("failed to get submissions: %s", err.Error())
 		}
 	}
@@ -133,13 +132,13 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 	temporaryResolvePath := fmt.Sprintf("/tmp/%d", submissionID)
 
 	if err := os.MkdirAll(temporaryResolvePath, os.ModePerm); err != nil {
-		slog.Warn("Failed to create temporary directory", "error", err)
+		r.logger.Warnw("Failed to create temporary directory", "error", err)
 		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
 	reader, err := zip.OpenReader(file)
 	if err != nil {
-		slog.Warn("Failed to open zip file", "error", err)
+		r.logger.Warnw("Failed to open zip file", "error", err)
 		return fmt.Errorf("failed to open zip file: %w", err)
 	}
 	defer reader.Close()
@@ -148,7 +147,7 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 		fpath := filepath.Join(temporaryResolvePath, f.Name)
 
 		if !strings.HasPrefix(fpath, filepath.Clean(temporaryResolvePath)+string(os.PathSeparator)) {
-			slog.Warn("Illegal file path in zip", "filePath", fpath)
+			r.logger.Warnw("Illegal file path in zip", "filePath", fpath)
 			return fmt.Errorf("%s: illegal file path", fpath)
 		}
 
@@ -158,19 +157,19 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 		}
 
 		if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-			slog.Warn("Failed to create directory for file in zip", "error", err)
+			r.logger.Warnw("Failed to create directory for file in zip", "error", err)
 			return fmt.Errorf("failed to create directory for file: %w", err)
 		}
 
 		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 		if err != nil {
-			slog.Warn("Failed to open output file", "filePath", fpath, "error", err)
+			r.logger.Warnw("Failed to open output file", "filePath", fpath, "error", err)
 			return fmt.Errorf("failed to open output file: %w", err)
 		}
 
 		rc, err := f.Open()
 		if err != nil {
-			slog.Warn("Failed to open file in zip", "filePath", fpath, "error", err)
+			r.logger.Warnw("Failed to open file in zip", "filePath", fpath, "error", err)
 			return fmt.Errorf("failed to open file in zip: %w", err)
 		}
 
@@ -180,14 +179,14 @@ func (r *repository) ExtractZip(submissionID int, storedName string) error {
 		rc.Close()
 
 		if err != nil {
-			slog.Warn("Failed to copy file contents", "filePath", fpath, "error", err)
+			r.logger.Warnw("Failed to copy file contents", "filePath", fpath, "error", err)
 			return fmt.Errorf("failed to copy file contents: %w", err)
 		}
 	}
 
 	files, err := os.ReadDir(temporaryResolvePath)
 	if err != nil {
-		slog.Warn("Failed to read directory", "error", err)
+		r.logger.Warnw("Failed to read directory", "error", err)
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
 

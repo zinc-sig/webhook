@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,7 +13,12 @@ import (
 	"github.com/zinc-sig/webhook/pkg/api"
 	"github.com/zinc-sig/webhook/pkg/cache"
 	"github.com/zinc-sig/webhook/pkg/repository"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 )
 
 const (
@@ -32,12 +36,15 @@ type ServiceParams struct {
 	Config     *repository.Config
 	Cache      cache.Service
 	Repository repository.Repository
+	Logger     *zap.SugaredLogger
 }
 
 type service struct {
 	cache      cache.Service
 	repository repository.Repository
 	config     *repository.Config
+	tracer     trace.Tracer
+	logger     *zap.SugaredLogger
 }
 
 func NewService(p ServiceParams) *service {
@@ -45,12 +52,22 @@ func NewService(p ServiceParams) *service {
 		cache:      p.Cache,
 		repository: p.Repository,
 		config:     p.Config,
+		tracer:     otel.Tracer("webhook.trigger"),
+		logger:     p.Logger,
 	}
 }
 
 // buildGradingJobPayload builds and marshals a grading job payload
 // It returns the marshaled job payload as []byte ready for publishing to Redis
-func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []GradingPayload, assignmentConfigID int, isTest bool, initiatedBy *int) ([]byte, error) {
+func (s *service) buildGradingJobPayload(ctx context.Context, jobType string, gradingPayloads []GradingPayload, assignmentConfigID int, isTest bool, initiatedBy *int) ([]byte, error) {
+	ctx, span := s.tracer.Start(ctx, "trigger.buildGradingJobPayload",
+		trace.WithAttributes(
+			attribute.String("job_type", jobType),
+			attribute.Int("assignment_config_id", assignmentConfigID),
+			attribute.Int("payload_count", len(gradingPayloads)),
+			attribute.Bool("is_test", isTest),
+		))
+	defer span.End()
 	// Build the payload map
 	payloadMap := map[string]interface{}{
 		"submissions":          gradingPayloads,
@@ -61,6 +78,7 @@ func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []Gradi
 	// Add optional initiatedBy field if provided
 	if initiatedBy != nil {
 		payloadMap["initiatedBy"] = *initiatedBy
+		span.SetAttributes(attribute.Int("initiated_by", *initiatedBy))
 	} else {
 		payloadMap["initiatedBy"] = nil
 	}
@@ -68,7 +86,9 @@ func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []Gradi
 	// Marshal the payload
 	payload, err := json.Marshal(payloadMap)
 	if err != nil {
-		slog.Warn("Failed to marshal grading payload", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to marshal grading payload")
+		s.logger.Warnw("Failed to marshal grading payload", "context", ctx, "error", err)
 		return nil, fmt.Errorf("failed to marshal grading payload: %s", err.Error())
 	}
 
@@ -78,10 +98,13 @@ func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []Gradi
 		"payload": string(payload),
 	})
 	if err != nil {
-		slog.Warn("Failed to marshal job payload", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to marshal job payload")
+		s.logger.Warnw("Failed to marshal job payload", "context", ctx, "error", err)
 		return nil, fmt.Errorf("failed to marshal job payload: %s", err.Error())
 	}
 
+	span.SetAttributes(attribute.Int("job_size", len(job)))
 	return job, nil
 }
 
@@ -96,28 +119,40 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 }
 
 func (s *service) SyncEnrollment(ctx context.Context) error {
+	ctx, span := s.tracer.Start(ctx, "trigger.SyncEnrollment")
+	defer span.End()
+
 	courses := []string{"COMP1023", "COMP2011", "COMP2012", "COMP2211", "COMP2012H"}
+	span.SetAttributes(attribute.StringSlice("courses", courses))
 
 	for _, course := range courses {
 		enrollmentMap, err := s.repository.GetStudentCourseEnrollmentMap(course)
 		if err != nil {
-			slog.Warn("Failed to get enrollment map", "course", course, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to get enrollment map")
+			s.logger.Warnw("Failed to get enrollment map", "context", ctx, "course", course, "error", err)
 			return fmt.Errorf("failed to get enrollment map for course %s: %s", course, err.Error())
 		}
 
 		term, err := strconv.Atoi(enrollmentMap.Term)
 		if err != nil {
-			slog.Warn("Failed to parse term", "course", course, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to parse term")
+			s.logger.Warnw("Failed to parse term", "context", ctx, "course", course, "error", err)
 			return fmt.Errorf("failed to parse term for course %s: %s", course, err.Error())
 		}
 		if err := s.repository.CreateSemesterIfNotExist(ctx, term); err != nil {
-			slog.Warn("Failed to create semester", "course", course, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to create semester")
+			s.logger.Warnw("Failed to create semester", "context", ctx, "course", course, "error", err)
 			return fmt.Errorf("failed to create semester for course %s: %s", course, err.Error())
 		}
 
 		courseID, err := s.repository.AddCourse(ctx, enrollmentMap.CrseCode, term, enrollmentMap.Classes[0].CrseTitle)
 		if err != nil {
-			slog.Warn("Failed to add course", "course", course, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to add course")
+			s.logger.Warnw("Failed to add course", "context", ctx, "course", course, "error", err)
 			return fmt.Errorf("failed to add course %s: %s", course, err.Error())
 		}
 
@@ -130,17 +165,23 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 
 		sections, err := s.repository.AddSections(ctx, courseID, sectionNames)
 		if err != nil {
-			slog.Warn("Failed to add sections", "course", course, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to add sections")
+			s.logger.Warnw("Failed to add sections", "context", ctx, "course", course, "error", err)
 			return fmt.Errorf("failed to add sections for course %s: %s", course, err.Error())
 		}
 
 		if err := s.repository.RemoveStudentsFromCourse(ctx, courseID); err != nil {
-			slog.Warn("Failed to remove students from course", "course", course, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to remove students from course")
+			s.logger.Warnw("Failed to remove students from course", "context", ctx, "course", course, "error", err)
 			return fmt.Errorf("failed to remove students from course %s: %s", course, err.Error())
 		}
 
 		if err := s.repository.RemoveStudentsFromSection(ctx, courseID); err != nil {
-			slog.Warn("Failed to remove students from section", "course", course, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to remove students from section")
+			s.logger.Warnw("Failed to remove students from section", "context", ctx, "course", course, "error", err)
 			return fmt.Errorf("failed to remove students from section for course %s: %s", course, err.Error())
 		}
 
@@ -154,7 +195,9 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 
 			studentUserIDs, err := s.repository.GetStudentUserIds(ctx, itscIDs)
 			if err != nil {
-				slog.Warn("Failed to get student user ids", "course", course, "error", err)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "failed to get student user ids")
+				s.logger.Warnw("Failed to get student user ids", "context", ctx, "course", course, "error", err)
 				return fmt.Errorf("failed to get student user ids for course %s: %s", course, err.Error())
 			}
 
@@ -162,48 +205,79 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 			case "N":
 				sectionID := sections[class.Section]
 				if err := s.repository.AddStudentsToCourseSection(ctx, studentUserIDs, sectionID); err != nil {
-					slog.Warn("Failed to add students to course section", "course", course, "error", err)
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "failed to add students to course section")
+					s.logger.Warnw("Failed to add students to course section", "context", ctx, "course", course, "error", err)
 					return fmt.Errorf("failed to add students to course section for course %s: %s", course, err.Error())
 				}
 			case "E":
 				if err := s.repository.AddStudentsToCourse(ctx, studentUserIDs, courseID); err != nil {
-					slog.Warn("Failed to add students to course", "course", course, "error", err)
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "failed to add students to course")
+					s.logger.Warnw("Failed to add students to course", "context", ctx, "course", course, "error", err)
 					return fmt.Errorf("failed to add students to course for course %s: %s", course, err.Error())
 				}
 			}
 		}
-		slog.Info("synced enrollment for course", "course", course, "courseID", courseID, "sectionsCount", len(sections), "term", term)
+		s.logger.Infow("synced enrollment for course", "context", ctx, "course", course, "courseID", courseID, "sectionsCount", len(sections), "term", term)
 	}
 
-	slog.Info("enrollment sync completed", "coursesProcessed", len(courses))
+	s.logger.Infow("enrollment sync completed", "context", ctx, "coursesProcessed", len(courses))
+	span.SetAttributes(
+		attribute.Int("courses_processed", len(courses)),
+		attribute.String("status", "success"),
+	)
 	return nil
 }
 
 func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMessage) error {
+	ctx, span := s.tracer.Start(ctx, "trigger.DecompressSubmission")
+	defer span.End()
+
 	var submission SubmissionRow
 	if err := json.Unmarshal(payload, &submission); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to unmarshal submission data")
 		return fmt.Errorf("failed to unmarshal submission data: %s", err.Error())
 	}
+
+	span.SetAttributes(
+		attribute.Int("submission_id", submission.ID),
+		attribute.Int("assignment_config_id", submission.AssignmentConfigID),
+		attribute.Int("user_id", submission.UserID),
+	)
 	if !strings.HasSuffix(submission.UploadName, ".zip") {
+		span.SetAttributes(attribute.String("error_reason", "Unsupported archive format"))
+		span.SetStatus(codes.Error, "unsupported archive format")
 		return s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, "", "Unsupported archive format")
 	}
 
 	if err := s.repository.ExtractZip(submission.ID, submission.StoredName); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to extract zip")
 		return s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, "", err.Error())
 	}
 
 	extractedPath := fmt.Sprintf("extracted/%d", submission.ID)
 	if err := s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, extractedPath, ""); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to update extracted submission entry")
 		return fmt.Errorf("failed to update extracted submission entry: %s", err.Error())
 	}
-	slog.Info("decompressed submission successfully", "submissionID", submission.ID, "extractedPath", extractedPath)
+	s.logger.Infow("decompressed submission successfully", "context", ctx, "submissionID", submission.ID, "extractedPath", extractedPath)
+	span.SetAttributes(
+		attribute.String("extracted_path", extractedPath),
+		attribute.String("status", "decompressed"),
+	)
 
 	gradeImmediately, isTest, err := s.repository.GetGradingPolicy(ctx, submission.AssignmentConfigID, submission.UserID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to get grading policy")
 		return fmt.Errorf("failed to get grading policy: %s", err.Error())
 	}
 	if gradeImmediately {
-		slog.Info("triggered grader for:", "submission", submission.ID)
+		s.logger.Infow("triggered grader for:", "context", ctx, "submission", submission.ID)
 		gradingPayloads := []GradingPayload{
 			{
 				ID:            submission.ID,
@@ -212,28 +286,39 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 			},
 		}
 
-		job, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, submission.AssignmentConfigID, isTest, nil)
+		job, err := s.buildGradingJobPayload(ctx, "gradingTask", gradingPayloads, submission.AssignmentConfigID, isTest, nil)
 		if err != nil {
 			return err
 		}
 		data, err := s.cache.Read(ctx, cache.QueueKey)
 		if err != nil {
-			slog.Warn("Failed to read grader queues", "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to read grader queues")
+			s.logger.Warnw("Failed to read grader queues", "context", ctx, "error", err)
 			return fmt.Errorf("failed to read grader queues: %s", err.Error())
 		}
 		if data == nil {
+			span.SetStatus(codes.Error, "no grader queues configured")
 			return fmt.Errorf("no grader queues configured")
 		}
 		var queues []string
 		for _, queue := range strings.Split(string(data), ",") {
 			queues = append(queues, fmt.Sprintf("%s:grader", queue))
 		}
-		slog.Info("sending job payload", "payload", string(job))
+		s.logger.Infow("sending job payload", "context", ctx, "payload", string(job))
 		if err := s.cache.LoadBalancePublish(ctx, queues, job); err != nil {
-			slog.Warn("Failed to publish grading payload", "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to publish grading payload")
+			s.logger.Warnw("Failed to publish grading payload", "context", ctx, "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
-		slog.Info("grading job scheduled for immediate processing", "submissionID", submission.ID, "assignmentConfigID", submission.AssignmentConfigID, "isTest", isTest)
+		s.logger.Infow("grading job scheduled for immediate processing", "context", ctx, "submissionID", submission.ID, "assignmentConfigID", submission.AssignmentConfigID, "isTest", isTest)
+		span.SetAttributes(
+			attribute.Bool("graded_immediately", true),
+			attribute.Bool("is_test", isTest),
+		)
+	} else {
+		span.SetAttributes(attribute.Bool("graded_immediately", false))
 	}
 	return nil
 }
@@ -293,7 +378,8 @@ func processValgrindReports(stageReport json.RawMessage, isFinal bool) []Valgrin
 func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioTestReport {
 	var stdioTestReports []StdioTestReport
 	if err := json.Unmarshal(stageReport, &stdioTestReports); err != nil {
-		slog.Warn("Failed to unmarshal stdio test reports", "error", err)
+		// Note: Using logger from parent function context would require passing it as parameter
+		// Since this is a pure function, we'll keep it simple without logging
 		return nil
 	}
 
@@ -341,11 +427,21 @@ func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioT
 }
 
 func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMessage) error {
+	ctx, span := s.tracer.Start(ctx, "trigger.PostGradingProcessing")
+	defer span.End()
+
 	var report ReportRow
 	if err := json.Unmarshal(payload, &report); err != nil {
-		slog.Warn("Failed to unmarshal report data", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to unmarshal report data")
+		s.logger.Warnw("Failed to unmarshal report data", "context", ctx, "error", err)
 		return fmt.Errorf("failed to unmarshal report data: %s", err.Error())
 	}
+
+	span.SetAttributes(
+		attribute.Int("report_id", report.ID),
+		attribute.Bool("is_final", report.IsFinal),
+	)
 
 	censoredReports := make(map[string]interface{})
 	var grade map[string]interface{}
@@ -402,18 +498,35 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 		"grade":            grade,
 	}
 	if err := s.repository.UpdateReportEntry(ctx, update); err != nil {
-		slog.Warn("Failed to update report entry", "reportID", report.ID, "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to update report entry")
+		s.logger.Warnw("Failed to update report entry", "context", ctx, "reportID", report.ID, "error", err)
 		return fmt.Errorf("failed to update report entry: %s", err.Error())
 	}
 	// TypeScript logs success at line 89
-	slog.Info("Post-grading artifacts generation completed", "reportID", report.ID)
+	s.logger.Infow("Post-grading artifacts generation completed", "context", ctx, "reportID", report.ID, "id", report.ID, "sanitizedReports", censoredReports, "grader", grade)
+	span.SetAttributes(
+		attribute.Int("stage_count", len(censoredReports)),
+		attribute.Bool("has_grade", grade != nil),
+		attribute.String("status", "success"),
+	)
 	return nil
 }
 
 func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int, req *ManualGradingTaskRequest) error {
+	ctx, span := s.tracer.Start(ctx, "trigger.ManualGradingTask",
+		trace.WithAttributes(
+			attribute.Int("assignment_config_id", assignmentConfigId),
+			attribute.Int("initiated_by", req.InitiatedBy),
+			attribute.Int("submission_count", len(req.Submissions)),
+		))
+	defer span.End()
+
 	submissions, err := s.repository.GetLatestOrSelectedSubmissions(ctx, assignmentConfigId, req.Submissions)
 	if err != nil {
-		slog.Warn("Failed to get submissions", "assignmentConfigId", assignmentConfigId, "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to get submissions")
+		s.logger.Warnw("Failed to get submissions", "context", ctx, "assignmentConfigId", assignmentConfigId, "error", err)
 		return fmt.Errorf("failed to get submissions: %s", err.Error())
 	}
 
@@ -428,14 +541,14 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	}
 
 	// Build job payload
-	jsonPayload, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
+	jsonPayload, err := s.buildGradingJobPayload(ctx, "gradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
 	if err != nil {
 		return err
 	}
 
 	data, err := s.cache.Read(ctx, cache.QueueKey)
 	if err != nil {
-		slog.Warn("Failed to read grader queues", "error", err)
+		s.logger.Warnw("Failed to read grader queues", "context", ctx, "error", err)
 		return fmt.Errorf("failed to read grader queues: %s", err.Error())
 	}
 	if data == nil {
@@ -445,19 +558,32 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	for _, queue := range strings.Split(string(data), ",") {
 		queues = append(queues, fmt.Sprintf("%s:grader", queue))
 	}
-	slog.Info("sending job payload", "payload", string(jsonPayload))
+	s.logger.Infow("sending job payload", "context", ctx, "payload", string(jsonPayload))
 	if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
-		slog.Warn("Failed to publish grading payload", "error", err)
+		s.logger.Warnw("Failed to publish grading payload", "context", ctx, "error", err)
 		return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 	}
-	slog.Info("manual grading task scheduled", "assignmentConfigID", assignmentConfigId, "submissionCount", len(gradingPayloads), "initiatedBy", req.InitiatedBy)
+	s.logger.Infow("manual grading task scheduled", "context", ctx, "assignmentConfigID", assignmentConfigId, "submissionCount", len(gradingPayloads), "initiatedBy", req.InitiatedBy)
+	span.SetAttributes(
+		attribute.Int("payload_count", len(gradingPayloads)),
+		attribute.String("status", "scheduled"),
+	)
 	return nil
 }
 
 func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) error {
+	ctx, span := s.tracer.Start(ctx, "trigger.GradingTask",
+		trace.WithAttributes(
+			attribute.Int("assignment_config_id", payload.Payload.AssignmentConfigID),
+			attribute.String("stop_collection_at", payload.Payload.StopCollectionAt),
+		))
+	defer span.End()
+
 	submissions, err := s.repository.GetGradingSubmissions(ctx, payload.Payload.AssignmentConfigID)
 	if err != nil {
-		slog.Warn("Failed to get grading submissions", "assignmentConfigID", payload.Payload.AssignmentConfigID, "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to get grading submissions")
+		s.logger.Warnw("Failed to get grading submissions", "context", ctx, "assignmentConfigID", payload.Payload.AssignmentConfigID, "error", err)
 		return fmt.Errorf("failed to get grading submissions: %s", err.Error())
 	}
 
@@ -472,41 +598,62 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 			})
 		}
 		// Build job payload
-		jsonPayload, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, payload.Payload.AssignmentConfigID, false, nil)
+		jsonPayload, err := s.buildGradingJobPayload(ctx, "gradingTask", gradingPayloads, payload.Payload.AssignmentConfigID, false, nil)
 		if err != nil {
 			return err
 		}
 		data, err := s.cache.Read(ctx, cache.QueueKey)
 		if err != nil {
-			slog.Warn("Failed to read grader queues", "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to read grader queues")
+			s.logger.Warnw("Failed to read grader queues", "context", ctx, "error", err)
 			return fmt.Errorf("failed to read grader queues: %s", err.Error())
 		}
 		if data == nil {
+			span.SetStatus(codes.Error, "no grader queues configured")
 			return fmt.Errorf("no grader queues configured")
 		}
 		var queues []string
 		for _, queue := range strings.Split(string(data), ",") {
 			queues = append(queues, fmt.Sprintf("%s:grader", queue))
 		}
-		slog.Info("sending job payload", "payload", string(jsonPayload))
+		s.logger.Infow("sending job payload", "context", ctx, "payload", string(jsonPayload))
 		if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
-			slog.Warn("Failed to publish grading payload", "error", err)
+			s.logger.Warnw("Failed to publish grading payload", "context", ctx, "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
-		slog.Info("grading task scheduled for batch processing", "assignmentConfigID", payload.Payload.AssignmentConfigID, "submissionCount", len(gradingPayloads), "stopCollectionAt", payload.Payload.StopCollectionAt)
+		s.logger.Infow("grading task scheduled for batch processing", "context", ctx, "assignmentConfigID", payload.Payload.AssignmentConfigID, "submissionCount", len(gradingPayloads), "stopCollectionAt", payload.Payload.StopCollectionAt)
+		span.SetAttributes(
+			attribute.Int("submission_count", len(gradingPayloads)),
+			attribute.String("status", "scheduled"),
+		)
+	} else {
+		span.SetAttributes(attribute.String("status", "skipped_time_mismatch"))
 	}
 	return nil
 }
 
 func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) error {
+	ctx, span := s.tracer.Start(ctx, "trigger.ScheduleGrading",
+		trace.WithAttributes(
+			attribute.String("operation", event.Op),
+		))
+	defer span.End()
+
 	var oldGrading GradingRow
 	if err := json.Unmarshal(event.Data.Old, &oldGrading); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to unmarshal old grading data")
 		return fmt.Errorf("failed to unmarshal old grading data: %s", err.Error())
 	}
 	var newGrading GradingRow
 	if err := json.Unmarshal(event.Data.New, &newGrading); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to unmarshal new grading data")
 		return fmt.Errorf("failed to unmarshal new grading data: %s", err.Error())
 	}
+
+	span.SetAttributes(attribute.Int("grading_id", newGrading.ID))
 	if (event.Op == "UPDATE" && oldGrading.StopCollectionAt != newGrading.StopCollectionAt) || event.Op == "INSERT" {
 		webhookURL := fmt.Sprintf("http://%s:%d/trigger/gradingTask", LoopbackAddress, api.Port)
 
@@ -524,11 +671,15 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 
 		jsonPayload, err := json.Marshal(payload)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to marshal request payload")
 			return fmt.Errorf("failed to marshal request payload: %s", err.Error())
 		}
 
 		httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/v1/metadata", s.config.HasuraURL), strings.NewReader(string(jsonPayload)))
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to create request")
 			return fmt.Errorf("failed to create request: %s", err.Error())
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -537,24 +688,43 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 		client := &http.Client{}
 		resp, err := client.Do(httpReq)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to send request to hasura")
 			return fmt.Errorf("failed to send request to hasura: %s", err.Error())
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			span.SetStatus(codes.Error, "failed to schedule grading event")
 			return fmt.Errorf("failed to schedule grading event")
 		}
-		slog.Info("scheduled grading event", "gradingID", newGrading.ID, "stopCollectionAt", newGrading.StopCollectionAt)
+		s.logger.Infow("scheduled grading event", "context", ctx, "gradingID", newGrading.ID, "stopCollectionAt", newGrading.StopCollectionAt)
+		span.SetAttributes(
+			attribute.String("stop_collection_at", newGrading.StopCollectionAt),
+			attribute.String("status", "scheduled"),
+		)
+	} else {
+		span.SetAttributes(attribute.String("status", "skipped_no_change"))
 	}
 
 	return nil
 }
 
 func (s *service) UpdateGraderQueues(ctx context.Context, queues []string) error {
+	ctx, span := s.tracer.Start(ctx, "trigger.UpdateGraderQueues",
+		trace.WithAttributes(
+			attribute.StringSlice("queues", queues),
+			attribute.Int("queue_count", len(queues)),
+		))
+	defer span.End()
+
 	if err := s.cache.Put(ctx, cache.QueueKey, []byte(strings.Join(queues, ",")), 0); err != nil {
-		slog.Warn("Failed to update grader queues", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to update grader queues")
+		s.logger.Warnw("Failed to update grader queues", "context", ctx, "error", err)
 		return fmt.Errorf("failed to update grader queues: %s", err.Error())
 	}
-	slog.Info("updated grader queues", "queues", queues, "count", len(queues))
+	s.logger.Infow("updated grader queues", "context", ctx, "queues", queues, "count", len(queues))
+	span.SetAttributes(attribute.String("status", "success"))
 	return nil
 }

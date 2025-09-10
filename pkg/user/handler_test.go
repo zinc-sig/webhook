@@ -17,6 +17,8 @@ import (
 	"github.com/zinc-sig/webhook/pkg/api"
 	"github.com/zinc-sig/webhook/pkg/cache"
 	"github.com/zinc-sig/webhook/pkg/repository"
+	"go.opentelemetry.io/otel"
+	"go.uber.org/zap"
 )
 
 // MockCache implements cache.Service for testing
@@ -410,11 +412,14 @@ func TestIdentity(t *testing.T) {
 			}
 
 			// Create service with mocks
+			logger, _ := zap.NewDevelopment()
 			service := &service{
 				cache:         mockCache,
 				sessionSecret: "test-secret",
 				jwtVerifier:   mockJWTVerifier,
 				repository:    mockRepo,
+				tracer:        otel.Tracer("test"),
+				logger:        logger.Sugar(),
 			}
 
 			// Setup Echo
@@ -464,7 +469,11 @@ func TestIdentity(t *testing.T) {
 
 func TestIdentity_InvalidRequest(t *testing.T) {
 	// Test invalid JSON binding
-	service := &service{}
+	logger, _ := zap.NewDevelopment()
+	service := &service{
+		tracer: otel.Tracer("test"),
+		logger: logger.Sugar(),
+	}
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/identity", bytes.NewReader([]byte("invalid json")))

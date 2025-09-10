@@ -2,7 +2,6 @@ package user
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -15,12 +14,12 @@ func Identity(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var req IdentityRequest
 		if err := c.Bind(&req); err != nil {
-			slog.Warn("failed to bind request", "error", err)
+			s.logger.Warnw("failed to bind request", "context", c.Request().Context(), "error", err)
 			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "Invalid request body", Message: err.Error()})
 		}
 		user, err := s.ValidateSession(c.Request().Context(), req.Headers.Cookie)
 		if err != nil {
-			slog.Warn("failed to validate session", "error", err)
+			s.logger.Warnw("failed to validate session", "context", c.Request().Context(), "error", err)
 			return c.JSON(http.StatusUnauthorized, api.ErrorResponse{Error: "Unauthorized", Message: err.Error()})
 		}
 		allowedCourses := ""

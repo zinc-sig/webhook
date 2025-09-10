@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -143,7 +142,7 @@ func (r *repository) AddSections(ctx context.Context, courseID int, sectionNames
 
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
-		slog.Error("error adding sections", "response", string(m))
+		r.logger.Errorw("error adding sections", "context", ctx, "response", string(m))
 		return nil, fmt.Errorf("failed to add sections: %w", err)
 	}
 
@@ -167,7 +166,7 @@ func (r *repository) AddStudentsToCourseSection(ctx context.Context, studentUser
 	var resp map[string]interface{}
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
-		slog.Error("error adding students to course section", "response", string(m))
+		r.logger.Errorw("error adding students to course section", "context", ctx, "response", string(m))
 		return fmt.Errorf("failed to add students to course section: %w", err)
 	}
 	return nil
@@ -185,7 +184,7 @@ func (r *repository) AddStudentsToCourse(ctx context.Context, studentUserIDs []i
 	var resp map[string]interface{}
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
-		slog.Error("error adding students to course", "response", string(m))
+		r.logger.Errorw("error adding students to course", "context", ctx, "response", string(m))
 		return fmt.Errorf("failed to add students to course: %w", err)
 	}
 	return nil
@@ -198,7 +197,7 @@ func (r *repository) RemoveStudentsFromSection(ctx context.Context, courseID int
 	var resp map[string]interface{}
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
-		slog.Error("error removing students from section", "response", string(m))
+		r.logger.Errorw("error removing students from section", "context", ctx, "response", string(m))
 		return fmt.Errorf("failed to remove students from section: %w", err)
 	}
 	return nil
@@ -211,7 +210,7 @@ func (r *repository) RemoveStudentsFromCourse(ctx context.Context, courseID int)
 	var resp map[string]interface{}
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
-		slog.Error("error removing students from course", "response", string(m))
+		r.logger.Errorw("error removing students from course", "context", ctx, "response", string(m))
 		return fmt.Errorf("failed to remove students from course: %w", err)
 	}
 	return nil
@@ -227,7 +226,7 @@ func (r *repository) CreateSemesterIfNotExist(ctx context.Context, id int) error
 	var resp map[string]interface{}
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
-		slog.Error("error creating semester", "response", string(m))
+		r.logger.Errorw("error creating semester", "context", ctx, "response", string(m))
 		return fmt.Errorf("failed to create semester: %w", err)
 	}
 	return nil

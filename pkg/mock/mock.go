@@ -15,6 +15,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/zinc-sig/webhook/pkg/cache"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 )
 
 type MockGraphQLClient struct {
@@ -52,6 +53,10 @@ func ProvideMockCacheService(t *testing.T) fx.Option {
 			return &cache.Config{
 				DSN: endpoint,
 			}
+		}),
+		fx.Provide(func() *zap.SugaredLogger {
+			logger, _ := zap.NewDevelopment()
+			return logger.Sugar()
 		}),
 		fx.Provide(
 			cache.NewService,
