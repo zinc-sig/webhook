@@ -71,7 +71,8 @@ func NewService(p ServiceParams) Service {
 		DB:       0,            // use default DB
 	})
 	return &service{
-		client: client,
+		client:   client,
+		handlers: make(map[string]MessageHandler),
 	}
 }
 
