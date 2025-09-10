@@ -13,7 +13,7 @@ import (
 	"go.uber.org/fx"
 )
 
-type MessageHandler func(ctx context.Context, jobType string, payload json.RawMessage) error
+type MessageHandler func(ctx context.Context, jobType string, queue string, payload json.RawMessage) error
 
 type JobMessage struct {
 	Job     string          `json:"job"`
@@ -37,7 +37,7 @@ func (s *service) processMessage(ctx context.Context, queue, rawMessage string) 
 	}
 
 	// Execute the callback
-	if err := handler(ctx, msg.Job, msg.Payload); err != nil {
+	if err := handler(ctx, msg.Job, queue, msg.Payload); err != nil {
 		slog.Warn("Handler error for job %s", "job", msg.Job, "error", err)
 	}
 }
@@ -161,7 +161,7 @@ func (s *service) Subscribe(ctx context.Context) error {
 			}
 			var queues []string
 			for _, queue := range strings.Split(string(data), ",") {
-				queues = append(queues, fmt.Sprintf("%s:grader", queue))
+				queues = append(queues, fmt.Sprintf("%s:api", queue))
 			}
 
 			for _, queue := range queues {
