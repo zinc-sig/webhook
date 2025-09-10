@@ -48,6 +48,43 @@ func NewService(p ServiceParams) *service {
 	}
 }
 
+// buildGradingJobPayload builds and marshals a grading job payload
+// It returns the marshaled job payload as []byte ready for publishing to Redis
+func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []GradingPayload, assignmentConfigID int, isTest bool, initiatedBy *int) ([]byte, error) {
+	// Build the payload map
+	payloadMap := map[string]interface{}{
+		"submissions":          gradingPayloads,
+		"assignment_config_id": assignmentConfigID,
+		"isTest":               isTest,
+	}
+	
+	// Add optional initiatedBy field if provided
+	if initiatedBy != nil {
+		payloadMap["initiatedBy"] = *initiatedBy
+	} else {
+		payloadMap["initiatedBy"] = nil
+	}
+	
+	// Marshal the payload
+	payload, err := json.Marshal(payloadMap)
+	if err != nil {
+		slog.Warn("Failed to marshal grading payload", "error", err)
+		return nil, fmt.Errorf("failed to marshal grading payload: %s", err.Error())
+	}
+	
+	// Create the job wrapper
+	job, err := json.Marshal(map[string]interface{}{
+		"job":     jobType,
+		"payload": string(payload),
+	})
+	if err != nil {
+		slog.Warn("Failed to marshal job payload", "error", err)
+		return nil, fmt.Errorf("failed to marshal job payload: %s", err.Error())
+	}
+	
+	return job, nil
+}
+
 func (s *service) RegisterRoutes(e *echo.Echo) {
 	e.POST("/trigger/syncEnrollment", SyncEnrollment(s))
 	e.POST("/trigger/decompression", DecompressSubmission(s))
@@ -163,25 +200,17 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 	}
 	if gradeImmediately {
 		slog.Info("triggered grader for:", "submission", submission.ID)
-		payload, err := json.Marshal(map[string]interface{}{
-			"submissions": []GradingPayload{
-				{
-					ID:            submission.ID,
-					ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
-					CreatedAt:     submission.CreatedAt.Time(),
-				},
+		gradingPayloads := []GradingPayload{
+			{
+				ID:            submission.ID,
+				ExtractedPath: fmt.Sprintf("extracted/%d", submission.ID),
+				CreatedAt:     submission.CreatedAt.Time(),
 			},
-			"isTest":               isTest,
-			"assignment_config_id": submission.AssignmentConfigID,
-			"initiatedBy":          nil,
-		})
-		job, err := json.Marshal(map[string]interface{}{
-			"job":     "gradingTask",
-			"payload": string(payload),
-		})
+		}
+		
+		job, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, submission.AssignmentConfigID, isTest, nil)
 		if err != nil {
-			slog.Warn("Failed to marshal grading payload", "error", err)
-			return fmt.Errorf("failed to marshal grading payload: %s", err.Error())
+			return err
 		}
 		data, err := s.cache.Read(ctx, cache.QueueKey)
 		if err != nil {
@@ -312,26 +341,10 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		})
 	}
 
-	// Push job to redis
-	payload, err := json.Marshal(map[string]interface{}{
-		"submissions":          gradingPayloads,
-		"assignment_config_id": assignmentConfigId,
-		"isTest":               false,
-		"initiatedBy":          req.InitiatedBy,
-	})
-
+	// Build job payload
+	jsonPayload, err := s.buildGradingJobPayload("manualGradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
 	if err != nil {
-		slog.Warn("Failed to marshal job payload", "error", err)
-		return fmt.Errorf("failed to marshal job payload: %s", err.Error())
-	}
-
-	jsonPayload, err := json.Marshal(map[string]interface{}{
-		"job":     "manualGradingTask",
-		"payload": string(payload),
-	})
-	if err != nil {
-		slog.Warn("Failed to marshal job payload", "error", err)
-		return fmt.Errorf("failed to marshal job payload: %s", err.Error())
+		return err
 	}
 
 	data, err := s.cache.Read(ctx, cache.QueueKey)
@@ -371,24 +384,10 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 				CreatedAt:     submission.CreatedAt.Time(),
 			})
 		}
-		payload, err := json.Marshal(map[string]interface{}{
-			"submissions":          gradingPayloads,
-			"assignment_config_id": payload.Payload.AssignmentConfigID,
-			"isTest":               false,
-		})
-
+		// Build job payload
+		jsonPayload, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, payload.Payload.AssignmentConfigID, false, nil)
 		if err != nil {
-			slog.Warn("Failed to marshal job payload", "error", err)
-			return fmt.Errorf("failed to marshal job payload: %s", err.Error())
-		}
-
-		jsonPayload, err := json.Marshal(map[string]interface{}{
-			"job":     "gradingTask",
-			"payload": string(payload),
-		})
-		if err != nil {
-			slog.Warn("Failed to marshal job payload", "error", err)
-			return fmt.Errorf("failed to marshal job payload: %s", err.Error())
+			return err
 		}
 		data, err := s.cache.Read(ctx, cache.QueueKey)
 		if err != nil {
