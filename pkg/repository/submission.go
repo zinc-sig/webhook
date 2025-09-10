@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/machinebox/graphql"
 )
@@ -22,9 +21,9 @@ type Assignment struct {
 }
 
 type Submission struct {
-	ID            int       `json:"id"`
-	ExtractedPath string    `json:"extracted_path"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            int    `json:"id"`
+	ExtractedPath string `json:"extracted_path"`
+	CreatedAt     string `json:"created_at"`
 }
 
 func (r *repository) UpdateExtractedSubmissionEntry(ctx context.Context, id int, extractedPath, failReason string) error {

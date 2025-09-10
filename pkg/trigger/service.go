@@ -305,6 +305,22 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		slog.Warn("Failed to get submissions", "assignmentConfigId", assignmentConfigId, "error", err)
 		return fmt.Errorf("failed to get submissions: %s", err.Error())
 	}
+
+	var gradingPayloads []GradingPayload
+
+	for _, submission := range submissions {
+		submittedAt, err := time.Parse("2006-01-02T15:04:05", submission.CreatedAt)
+		if err != nil {
+			slog.Warn("Failed to parse submission created at", "submissionID", submission.ID, "error", err)
+			return fmt.Errorf("failed to parse submission created at: %s", err.Error())
+		}
+		gradingPayloads = append(gradingPayloads, GradingPayload{
+			ID:            submission.ID,
+			ExtractedPath: submission.ExtractedPath,
+			CreatedAt:     submittedAt,
+		})
+	}
+
 	// Push job to redis
 	payload, err := json.Marshal(map[string]interface{}{
 		"submissions":          submissions,
@@ -355,8 +371,21 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 
 	if *submissions.AssignmentConfig.StopCollectionAt == payload.Payload.StopCollectionAt {
 		// Push job to redis
+		gradingPayloads := make([]GradingPayload, 0, len(submissions.AssignmentConfig.Submissions))
+		for _, submission := range submissions.AssignmentConfig.Submissions {
+			submittedAt, err := time.Parse("2006-01-02T15:04:05", submission.CreatedAt)
+			if err != nil {
+				slog.Warn("Failed to parse submission created at", "submissionID", submission.ID, "error", err)
+				return fmt.Errorf("failed to parse submission created at: %s", err.Error())
+			}
+			gradingPayloads = append(gradingPayloads, GradingPayload{
+				ID:            submission.ID,
+				ExtractedPath: submission.ExtractedPath,
+				CreatedAt:     submittedAt,
+			})
+		}
 		payload, err := json.Marshal(map[string]interface{}{
-			"submissions":          submissions.AssignmentConfig.Submissions,
+			"submissions":          gradingPayloads,
 			"assignment_config_id": payload.Payload.AssignmentConfigID,
 			"isTest":               false,
 		})
