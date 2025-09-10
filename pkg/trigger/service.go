@@ -96,7 +96,7 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 }
 
 func (s *service) SyncEnrollment(ctx context.Context) error {
-	courses := []string{"COMP1023", "COMP2011", "COMP2012", "COMP2211"}
+	courses := []string{"COMP1023", "COMP2011", "COMP2012", "COMP2211", "COMP2012H"}
 
 	for _, course := range courses {
 		enrollmentMap, err := s.repository.GetStudentCourseEnrollmentMap(course)
