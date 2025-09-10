@@ -41,6 +41,14 @@ var Module = fx.Module(
 						slog.Warn("Failed to load balance dequeue", "error", err)
 						return err
 					}
+
+					// Log successful processing
+					var reportIDs []int
+					for _, report := range data.Reports {
+						reportIDs = append(reportIDs, report.ID)
+					}
+					slog.Info("doneGrading processed successfully", "reportIDs", reportIDs, "reportCount", len(data.Reports), "queue", queue)
+
 					return nil
 				})
 				go cache.Subscribe(context.Background())
