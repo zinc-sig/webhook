@@ -37,11 +37,11 @@ var Module = fx.Module(
 					}
 					slog.Info("Processing job", "type", jobType, "queue", queue, "payload", data, "is_batch", len(data.Reports) > 1)
 
-          if err := cache.LoadBalanceDequeue(ctx, queue, len(data.Reports)); err != nil {
+					if err := cache.LoadBalanceDequeue(ctx, queue, len(data.Reports)); err != nil {
 						slog.Warn("Failed to load balance dequeue", "error", err)
 						return err
 					}
-					
+
 					// Log successful processing
 					var reportIDs []int
 					for _, report := range data.Reports {
