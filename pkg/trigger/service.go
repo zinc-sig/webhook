@@ -232,16 +232,16 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 					switch r.Visibility {
 					case "ALWAYS_HIDDEN":
 						valgrindReports[i].Stdout = []string{}
-						valgrindReports[i].Errors = []string{}
+						valgrindReports[i].Errors = []ValgrindReportError{}
 					case "VISIBLE_AFTER_GRADING":
 						if !report.IsFinal {
 							valgrindReports[i].Stdout = []string{}
-							valgrindReports[i].Errors = []string{}
+							valgrindReports[i].Errors = []ValgrindReportError{}
 						}
 					case "VISIBLE_AFTER_GRADING_IF_FAILED":
 						if !report.IsFinal || r.IsCorrect {
 							valgrindReports[i].Stdout = []string{}
-							valgrindReports[i].Errors = []string{}
+							valgrindReports[i].Errors = []ValgrindReportError{}
 						}
 					}
 				}

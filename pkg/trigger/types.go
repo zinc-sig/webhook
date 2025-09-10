@@ -44,20 +44,62 @@ type PipelineResults struct {
 }
 
 type StdioTestReport struct {
+	ID         int      `json:"id"`
+	Args       []string `json:"args"`
 	Visibility string   `json:"visibility"`
 	IsCorrect  bool     `json:"isCorrect"`
-	Stdout     []string `json:"stdout"`
-	Stderr     []string `json:"stderr"`
-	Expect     []string `json:"expect"`
-	Diff       []string `json:"diff"`
+	IsSuccess  bool     `json:"isSuccess"`
+	File       string   `json:"file"`
+	Score      *struct {
+		Score float64 `json:"score"`
+		Total float64 `json:"total"`
+	} `json:"score"`
+	StdIn        []string `json:"stdin"`
+	Stdout       []string `json:"stdout"`
+	Stderr       []string `json:"stderr"`
+	DiffStderr   []string `json:"diffStderr"`
+	Expect       []string `json:"expect"`
+	Diff         []string `json:"diff"`
+	DiffExitCode *int     `json:"diffExitCode"`
+	ExeExitCode  int      `json:"exeExitCode"`
+	HasTimedOut  bool     `json:"hasTimedOut"`
+	ExitCode     int      `json:"exitCode"`
+}
+
+type ValgrindReportError struct {
+	Kind string `json:"kind"`
+	What []struct {
+		WhatText string `json:"whatText"`
+		Stack    []struct {
+			IP   string  `json:"ip"`
+			Obj  *string `json:"obj"`
+			Func *string `json:"fn"`
+			Dir  *string `json:"dir"`
+			File *string `json:"file"`
+			Line *int    `json:"line"`
+		}
+		Aux bool `json:"aux"`
+	} `json:"what"`
 }
 
 type ValgrindReport struct {
-	Visibility string   `json:"visibility"`
-	IsCorrect  bool     `json:"isCorrect"`
-	Stdout     []string `json:"stdout"`
-	Stderr     []string `json:"stderr"`
-	Errors     []string `json:"errors"`
+	ID           int                   `json:"id"`
+	Executable   string                `json:"executable"`
+	Args         []string              `json:"args"`
+	Visibility   string                `json:"visibility"`
+	IsCorrect    bool                  `json:"isCorrect"`
+	IsSuccess    bool                  `json:"isSuccess"`
+	Stdout       []string              `json:"stdout"`
+	Stderr       []string              `json:"stderr"`
+	DiffExitCode *int                  `json:"diffExitCode"`
+	ExeExitCode  int                   `json:"exeExitCode"`
+	ExitCode     int                   `json:"exitCode"`
+	HasTimedOut  bool                  `json:"hasTimedOut"`
+	Errors       []ValgrindReportError `json:"errors"`
+	Score        *struct {
+		Score float64 `json:"score"`
+		Total float64 `json:"total"`
+	} `json:"score"`
 }
 
 type ManualGradingTaskRequest struct {
