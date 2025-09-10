@@ -45,6 +45,19 @@ func NewRouter(p ApiParams) http.Handler {
 	for _, handler := range p.Handlers {
 		handler.RegisterRoutes(router)
 	}
+	router.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogURI:    true,
+		LogStatus: true,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			slog.Info("request",
+				"URI", v.URI,
+				"method", v.Method,
+				"status", v.Status,
+				"requestID", v.RequestID,
+			)
+			return nil
+		},
+	}))
 
 	return router
 }

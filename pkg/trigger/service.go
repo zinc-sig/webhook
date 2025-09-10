@@ -244,11 +244,8 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 		slog.Warn("Failed to unmarshal report data", "error", err)
 		return fmt.Errorf("failed to unmarshal report data: %s", err.Error())
 	}
-	var pipelineResults PipelineResults
-	if err := json.Unmarshal(report.PipelineResults, &pipelineResults); err != nil {
-		slog.Warn("Failed to parse pipeline results", "error", err)
-		return fmt.Errorf("failed to parse pipeline results: %s", err.Error())
-	}
+
+	pipelineResults := report.PipelineResults
 
 	censoredReports := make(map[string]interface{})
 	var grade map[string]interface{}
