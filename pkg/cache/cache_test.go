@@ -1,9 +1,14 @@
 package cache_test
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
@@ -152,6 +157,100 @@ func TestLoadBalanceDequeue(t *testing.T) {
 					length3, err := client.Get(t.Context(), "channel3:length").Int()
 					assert.NoError(t, err, "failed to get length for channel3")
 					assert.Equal(t, 22, length3)
+				},
+			),
+		)
+
+		app.RequireStart()
+		t.Cleanup(app.RequireStop)
+	})
+}
+
+func TestLoadBalanceIntegration(t *testing.T) {
+	t.Run("publish and dequeue", func(t *testing.T) {
+		app := fxtest.New(
+			t,
+			mock.ProvideMockCacheService(t),
+			fx.Invoke(
+				func(s cache.Service, client *redis.Client) {
+					channels := []string{"channel1", "channel2", "channel3"}
+					s.Put(t.Context(), cache.QueueKey, []byte(strings.Join(channels, ",")), 0)
+
+					s.RegisterHandler("doneGrading", func(ctx context.Context, jobType, queue string, payload json.RawMessage) error {
+						var payloadJson string
+						if err := json.Unmarshal(payload, &payloadJson); err != nil {
+							slog.Warn("Failed to unmarshal payload", "error", err)
+							return err
+						}
+						var data cache.DoneGradingPayload
+						if err := json.Unmarshal([]byte(payloadJson), &data); err != nil {
+							slog.Warn("Failed to unmarshal payload", "error", err)
+							return err
+						}
+						slog.Info("Processing job", "type", jobType, "queue", queue, "payload", data, "is_batch", len(data.Reports) > 1)
+
+						if err := s.LoadBalanceDequeue(ctx, queue, len(data.Reports)); err != nil {
+							slog.Warn("Failed to load balance dequeue", "error", err)
+							return err
+						}
+
+						// Log successful processing
+						var reportIDs []int
+						for _, report := range data.Reports {
+							reportIDs = append(reportIDs, report.ID)
+						}
+						slog.Info("doneGrading processed successfully", "reportIDs", reportIDs, "reportCount", len(data.Reports), "queue", queue)
+
+						return nil
+					})
+
+					go s.Subscribe(t.Context())
+
+					// Publish jobs
+					for i := range 30 {
+						err := s.LoadBalancePublish(t.Context(), channels, []byte(fmt.Sprintf("job%d", i)), 1)
+						assert.NoError(t, err, "failed to load balance publish")
+					}
+
+					donePayloadJsons := make([]cache.DoneGradingPayload, 3)
+					for i := 1; i <= 30; i++ {
+						donePayloadJsons[i%3].Reports = append(donePayloadJsons[i%3].Reports,
+							struct {
+								ID           int `json:"id"`
+								SubmissionID int `json:"submission_id"`
+							}{ID: i, SubmissionID: i})
+					}
+
+					for idx, channel := range channels {
+						donePayload, err := json.Marshal(donePayloadJsons[idx])
+						assert.NoError(t, err, "failed to marshal done grading payload")
+
+						donePayloadStr, err := json.Marshal(string(donePayload))
+						assert.NoError(t, err, "failed to marshal done grading payload string")
+
+						msg := cache.JobMessage{
+							Job:     "doneGrading",
+							Payload: donePayloadStr,
+						}
+						msgPayload, err := json.Marshal(msg)
+						assert.NoError(t, err, "failed to marshal done message")
+						err = client.LPush(t.Context(), fmt.Sprintf("%s:api", channel), msgPayload).Err()
+						assert.NoError(t, err, "failed to push done message to channel %s", channel)
+					}
+
+					// Allow some time for processing
+					t.Log("Waiting for jobs to be processed... (19s)")
+					time.Sleep(19 * time.Second)
+					t.Log("Finished waiting")
+
+					// Check that all jobs have been processed and queues are empty
+					for _, channel := range channels {
+						length, err := client.Get(t.Context(), fmt.Sprintf("%s:length", channel)).Int()
+						assert.NoError(t, err, "failed to get length for %s", channel)
+						assert.Equal(t, 0, length)
+					}
+
+					// cancelCtx()
 				},
 			),
 		)
