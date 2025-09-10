@@ -355,6 +355,7 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	for _, queue := range strings.Split(string(data), ",") {
 		queues = append(queues, fmt.Sprintf("%s:grader", queue))
 	}
+	slog.Info("sending job payload", "payload", string(jsonPayload))
 	if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
 		slog.Warn("Failed to publish grading payload", "error", err)
 		return fmt.Errorf("failed to publish grading payload: %s", err.Error())
@@ -415,6 +416,7 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 		for _, queue := range strings.Split(string(data), ",") {
 			queues = append(queues, fmt.Sprintf("%s:grader", queue))
 		}
+		slog.Info("sending job payload", "payload", string(jsonPayload))
 		if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
