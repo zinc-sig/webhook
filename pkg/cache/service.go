@@ -54,7 +54,8 @@ type Service interface {
 	Read(ctx context.Context, key string) ([]byte, error)
 	Remove(ctx context.Context, key string) error
 	Publish(ctx context.Context, channel string, message []byte) error
-	LoadBalancePublish(ctx context.Context, channels []string, message []byte) error
+	LoadBalancePublish(ctx context.Context, channels []string, message []byte, njobs int) error
+	LoadBalanceDequeue(ctx context.Context, channel string, njobs int) error
 	Llen(ctx context.Context, channel string) (int64, error)
 	Subscribe(ctx context.Context) error
 	RegisterHandler(jobType string, handler MessageHandler)
@@ -121,17 +122,19 @@ func (s *service) Publish(ctx context.Context, channel string, message []byte) e
 	return s.client.RPush(ctx, channel, message).Err()
 }
 
-func (s *service) LoadBalancePublish(ctx context.Context, channels []string, message []byte) error {
+func (s *service) LoadBalancePublish(ctx context.Context, channels []string, message []byte, njobs int) error {
 
 	s.locker.Lock()
 	defer s.locker.Unlock()
 
 	// Find the channel with the least number of messages
 	var targetChannel string
-	minLen := int64(-1)
+	minLen := -1
 	for _, channel := range channels {
-		length, err := s.Llen(ctx, channel)
-		if err != nil {
+		length, err := s.client.Get(ctx, fmt.Sprintf("%s:length", channel)).Int()
+		if err == redis.Nil {
+			length = 0 // Channel does not exist, treat as empty
+		} else if err != nil {
 			slog.Warn("Failed to get length of channel", "channel", channel, "error", err)
 			continue
 		}
@@ -145,7 +148,34 @@ func (s *service) LoadBalancePublish(ctx context.Context, channels []string, mes
 		return fmt.Errorf("failed to determine target channel for load balancing")
 	}
 	slog.Info("Publishing to channel: %s with %d messages", "channel", targetChannel, "length", minLen)
-	return s.client.RPush(ctx, targetChannel, message).Err()
+
+	pipe := s.client.TxPipeline()
+	pipe.RPush(ctx, targetChannel, message)
+	pipe.IncrBy(ctx, fmt.Sprintf("%s:length", targetChannel), int64(njobs))
+
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (s *service) LoadBalanceDequeue(ctx context.Context, channel string, njobs int) error {
+	s.locker.Lock()
+	defer s.locker.Unlock()
+
+	err := s.client.DecrBy(ctx, fmt.Sprintf("%s:length", channel), int64(njobs)).Err()
+	if err != nil {
+		return err
+	}
+
+	curr_len, err := s.client.Get(ctx, fmt.Sprintf("%s:length", channel)).Int()
+	if err != nil {
+		return err
+	}
+	if curr_len < 0 {
+		// Reset to zero if it goes negative
+		slog.Warn("Channel length went negative, resetting to zero", "channel", channel)
+		return s.client.Set(ctx, fmt.Sprintf("%s:length", channel), 0, 0).Err()
+	}
+	return nil
 }
 
 func (s *service) Subscribe(ctx context.Context) error {

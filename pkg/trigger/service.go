@@ -57,21 +57,21 @@ func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []Gradi
 		"assignment_config_id": assignmentConfigID,
 		"isTest":               isTest,
 	}
-	
+
 	// Add optional initiatedBy field if provided
 	if initiatedBy != nil {
 		payloadMap["initiatedBy"] = *initiatedBy
 	} else {
 		payloadMap["initiatedBy"] = nil
 	}
-	
+
 	// Marshal the payload
 	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		slog.Warn("Failed to marshal grading payload", "error", err)
 		return nil, fmt.Errorf("failed to marshal grading payload: %s", err.Error())
 	}
-	
+
 	// Create the job wrapper
 	job, err := json.Marshal(map[string]interface{}{
 		"job":     jobType,
@@ -81,7 +81,7 @@ func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []Gradi
 		slog.Warn("Failed to marshal job payload", "error", err)
 		return nil, fmt.Errorf("failed to marshal job payload: %s", err.Error())
 	}
-	
+
 	return job, nil
 }
 
@@ -207,7 +207,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 				CreatedAt:     submission.CreatedAt.Time(),
 			},
 		}
-		
+
 		job, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, submission.AssignmentConfigID, isTest, nil)
 		if err != nil {
 			return err
@@ -225,7 +225,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 			queues = append(queues, fmt.Sprintf("%s:grader", queue))
 		}
 		slog.Info("sending job payload", "payload", string(job))
-		if err := s.cache.LoadBalancePublish(ctx, queues, job); err != nil {
+		if err := s.cache.LoadBalancePublish(ctx, queues, job, len(gradingPayloads)); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
@@ -360,7 +360,7 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		queues = append(queues, fmt.Sprintf("%s:grader", queue))
 	}
 	slog.Info("sending job payload", "payload", string(jsonPayload))
-	if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
+	if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload, len(gradingPayloads)); err != nil {
 		slog.Warn("Failed to publish grading payload", "error", err)
 		return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 	}
@@ -402,7 +402,7 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 			queues = append(queues, fmt.Sprintf("%s:grader", queue))
 		}
 		slog.Info("sending job payload", "payload", string(jsonPayload))
-		if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload); err != nil {
+		if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload, len(gradingPayloads)); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}

@@ -31,6 +31,11 @@ var Module = fx.Module(
 						return err
 					}
 					slog.Info("Processing job", "type", jobType, "queue", queue, "payload", data, "is_batch", len(data.Reports) > 1)
+
+					if err := cache.LoadBalanceDequeue(ctx, queue, len(data.Reports)); err != nil {
+						slog.Warn("Failed to load balance dequeue", "error", err)
+						return err
+					}
 					return nil
 				})
 				go cache.Subscribe(context.Background())
