@@ -154,6 +154,9 @@ func (s *service) LoadBalancePublish(ctx context.Context, channels []string, mes
 	pipe.IncrBy(ctx, fmt.Sprintf("%s:length", targetChannel), int64(njobs))
 
 	_, err := pipe.Exec(ctx)
+  if err == nil {
+		slog.Info("successfully published to queue", "targetChannel", targetChannel, "queueLength", minLen+njobs, "messageSize", len(message))
+	}
 	return err
 }
 

@@ -172,8 +172,10 @@ func (s *service) SyncEnrollment(ctx context.Context) error {
 				}
 			}
 		}
+		slog.Info("synced enrollment for course", "course", course, "courseID", courseID, "sectionsCount", len(sections), "term", term)
 	}
 
+	slog.Info("enrollment sync completed", "coursesProcessed", len(courses))
 	return nil
 }
 
@@ -190,9 +192,11 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		return s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, "", err.Error())
 	}
 
-	if err := s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, fmt.Sprintf("extracted/%d", submission.ID), ""); err != nil {
+	extractedPath := fmt.Sprintf("extracted/%d", submission.ID)
+	if err := s.repository.UpdateExtractedSubmissionEntry(ctx, submission.ID, extractedPath, ""); err != nil {
 		return fmt.Errorf("failed to update extracted submission entry: %s", err.Error())
 	}
+	slog.Info("decompressed submission successfully", "submissionID", submission.ID, "extractedPath", extractedPath)
 
 	gradeImmediately, isTest, err := s.repository.GetGradingPolicy(ctx, submission.AssignmentConfigID, submission.UserID)
 	if err != nil {
@@ -229,6 +233,7 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
+		slog.Info("grading job scheduled for immediate processing", "submissionID", submission.ID, "assignmentConfigID", submission.AssignmentConfigID, "isTest", isTest)
 	}
 	return nil
 }
@@ -239,11 +244,8 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 		slog.Warn("Failed to unmarshal report data", "error", err)
 		return fmt.Errorf("failed to unmarshal report data: %s", err.Error())
 	}
-	var pipelineResults PipelineResults
-	if err := json.Unmarshal(report.PipelineResults, &pipelineResults); err != nil {
-		slog.Warn("Failed to parse pipeline results", "error", err)
-		return fmt.Errorf("failed to parse pipeline results: %s", err.Error())
-	}
+
+	pipelineResults := report.PipelineResults
 
 	censoredReports := make(map[string]interface{})
 	var grade map[string]interface{}
@@ -321,6 +323,7 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 		slog.Warn("Failed to update report entry", "reportID", report.ID, "error", err)
 		return fmt.Errorf("failed to update report entry: %s", err.Error())
 	}
+	slog.Info("updated report entry", "id", report.ID, "sanitizedReports", censoredReports, "grader", grade)
 	return nil
 }
 
@@ -364,6 +367,7 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		slog.Warn("Failed to publish grading payload", "error", err)
 		return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 	}
+	slog.Info("manual grading task scheduled", "assignmentConfigID", assignmentConfigId, "submissionCount", len(gradingPayloads), "initiatedBy", req.InitiatedBy)
 	return nil
 }
 
@@ -406,6 +410,7 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
+		slog.Info("grading task scheduled for batch processing", "assignmentConfigID", payload.Payload.AssignmentConfigID, "submissionCount", len(gradingPayloads), "stopCollectionAt", payload.Payload.StopCollectionAt)
 	}
 	return nil
 }
@@ -456,6 +461,7 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("failed to schedule grading event")
 		}
+		slog.Info("scheduled grading event", "gradingID", newGrading.ID, "stopCollectionAt", newGrading.StopCollectionAt)
 	}
 
 	return nil
@@ -466,5 +472,6 @@ func (s *service) UpdateGraderQueues(ctx context.Context, queues []string) error
 		slog.Warn("Failed to update grader queues", "error", err)
 		return fmt.Errorf("failed to update grader queues: %s", err.Error())
 	}
+	slog.Info("updated grader queues", "queues", queues, "count", len(queues))
 	return nil
 }

@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/jwk"
@@ -36,29 +38,33 @@ func NewVerifier(p Params) JWTVerifier {
 func (v *verifier) VerifyToken(ctx context.Context, tokenString string) (*jwt.Token, error) {
 	keySet, err := jwk.Fetch(ctx, v.jwkEndpoint)
 	if err != nil {
-		return nil, err
+		slog.Warn("Failed to fetch JWK", "error", err)
+		return nil, fmt.Errorf("failed to fetch JWK: %w", err)
 	}
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		kid, ok := token.Header["kid"].(string)
 		if !ok {
+			slog.Warn("kid header not found in token")
 			return nil, errors.New("kid header not found")
 		}
 
 		keys, ok := keySet.LookupKeyID(kid)
 		if !ok {
+			slog.Warn("No keys found for given kid", "kid", kid)
 			return nil, errors.New("key not found")
 		}
 
 		var publicKey interface{}
 		if err := keys.Raw(&publicKey); err != nil {
-			return nil, err
+			slog.Warn("Failed to get raw key", "error", err)
+			return nil, fmt.Errorf("failed to get raw key: %w", err)
 		}
 
 		return publicKey, nil
 	})
 
-	return token, err
+	return token, fmt.Errorf("failed to parse token: %w", err)
 }
 
 var Module = fx.Module(

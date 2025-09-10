@@ -31,7 +31,7 @@ type SubmissionRow struct {
 
 type ReportRow struct {
 	ID              int             `json:"id"`
-	PipelineResults json.RawMessage `json:"pipeline_results"`
+	PipelineResults PipelineResults `json:"pipeline_results"`
 	IsFinal         bool            `json:"is_final"`
 }
 

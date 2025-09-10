@@ -75,9 +75,12 @@ func (s *service) ValidateSession(ctx context.Context, cookieString string) (*re
 		slog.Warn("could not read session from cache", "error", err)
 		return nil, fmt.Errorf("could not find request session with auth credentials: %w", err)
 	}
+	slog.Info("session cookie found", "key", key, "cookie", string(cookie))
 	if err := json.Unmarshal([]byte(cookie), &tokenSet); err != nil {
 		return nil, fmt.Errorf("could not parse session token: %w", err)
 	}
+
+	slog.Info("session found in cache", "tokenset", tokenSet.Data)
 
 	token, err := s.jwtVerifier.VerifyToken(ctx, tokenSet.Data.IdToken)
 	if err != nil {
@@ -105,5 +108,6 @@ func (s *service) ValidateSession(ctx context.Context, cookieString string) (*re
 		return nil, fmt.Errorf("failed to get user from database: %w", err)
 	}
 
+	slog.Info("session validated successfully", "itsc", itsc, "userID", user.ID)
 	return user, nil
 }
