@@ -47,6 +47,7 @@ type StdioTestReport struct {
 	Visibility string   `json:"visibility"`
 	IsCorrect  bool     `json:"isCorrect"`
 	Stdout     []string `json:"stdout"`
+	Stderr     []string `json:"stderr"`
 	Expect     []string `json:"expect"`
 	Diff       []string `json:"diff"`
 }
@@ -55,6 +56,7 @@ type ValgrindReport struct {
 	Visibility string   `json:"visibility"`
 	IsCorrect  bool     `json:"isCorrect"`
 	Stdout     []string `json:"stdout"`
+	Stderr     []string `json:"stderr"`
 	Errors     []string `json:"errors"`
 }
 

@@ -323,7 +323,7 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 
 	// Push job to redis
 	payload, err := json.Marshal(map[string]interface{}{
-		"submissions":          submissions,
+		"submissions":          gradingPayloads,
 		"assignment_config_id": assignmentConfigId,
 		"isTest":               false,
 		"initiatedBy":          req.InitiatedBy,
