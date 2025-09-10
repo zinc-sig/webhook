@@ -46,12 +46,12 @@ type PipelineResults struct {
 }
 
 type StdioTestReport struct {
-	ID         int      `json:"id"`
-	Args       []string `json:"args"`
-	Visibility string   `json:"visibility"`
-	IsCorrect  bool     `json:"isCorrect"`
-	IsSuccess  bool     `json:"isSuccess"`
-	File       string   `json:"file"`
+	ID         int    `json:"id"`
+	Args       string `json:"args"`
+	Visibility string `json:"visibility"`
+	IsCorrect  bool   `json:"isCorrect"`
+	IsSuccess  bool   `json:"isSuccess"`
+	File       string `json:"file"`
 	Score      *struct {
 		Score float64 `json:"score"`
 		Total float64 `json:"total"`
