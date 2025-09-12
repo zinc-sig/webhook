@@ -54,9 +54,9 @@ type Service interface {
 	Read(ctx context.Context, key string) ([]byte, error)
 	Remove(ctx context.Context, key string) error
 	Publish(ctx context.Context, channel string, message []byte) error
-	LoadBalancePublish(ctx context.Context, channels []string, message []byte, njobs int) error
-	LoadBalanceDequeue(ctx context.Context, channel string, njobs int) error
 	Llen(ctx context.Context, channel string) (int64, error)
+	LoadBalanceGraderPublish(ctx context.Context, message []byte, njobs int) error
+	LoadBalanceGraderDequeue(ctx context.Context, channel string, njobs int) error
 	Subscribe(ctx context.Context) error
 	RegisterHandler(jobType string, handler MessageHandler)
 }
@@ -122,20 +122,42 @@ func (s *service) Publish(ctx context.Context, channel string, message []byte) e
 	return s.client.RPush(ctx, channel, message).Err()
 }
 
-func (s *service) LoadBalancePublish(ctx context.Context, channels []string, message []byte, njobs int) error {
+func (s *service) LoadBalanceGraderPublish(ctx context.Context, message []byte, njobs int) error {
 
 	s.locker.Lock()
 	defer s.locker.Unlock()
 
+	data, err := s.Read(ctx, QueueKey)
+	if err != nil {
+		slog.Warn("Failed to read grader queues", "error", err)
+		return fmt.Errorf("failed to read grader queues: %s", err.Error())
+	}
+	if data == nil {
+		return fmt.Errorf("no grader queues configured")
+	}
+
+	channels := strings.Split(string(data), ",")
+
+	// Transaction for atomicity on getting lengths
+	trans := s.client.TxPipeline()
+	for _, channel := range channels {
+		trans.Get(ctx, fmt.Sprintf("%s:length", channel))
+	}
+	cmds, err := trans.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		return fmt.Errorf("failed to get lengths of channels: %s", err.Error())
+	}
+
 	// Find the channel with the least number of messages
 	var targetChannel string
 	minLen := -1
-	for _, channel := range channels {
-		length, err := s.client.Get(ctx, fmt.Sprintf("%s:length", channel)).Int()
+
+	for idx, channel := range channels {
+		length, err := cmds[idx].(*redis.StringCmd).Int()
 		if err == redis.Nil {
 			length = 0 // Channel does not exist, treat as empty
 		} else if err != nil {
-			slog.Warn("Failed to get length of channel", "channel", channel, "error", err)
+			slog.Warn("Failed to get value of of key", "key", fmt.Sprintf("%s:length", channel), "error", err)
 			continue
 		}
 		if minLen == -1 || length < minLen {
@@ -144,23 +166,24 @@ func (s *service) LoadBalancePublish(ctx context.Context, channels []string, mes
 		}
 	}
 
+	targetGraderChannel := fmt.Sprintf("%s:grader", targetChannel)
 	if minLen < 0 {
 		return fmt.Errorf("failed to determine target channel for load balancing")
 	}
-	slog.Info("Publishing to channel: %s with %d messages", "channel", targetChannel, "length", minLen)
+	slog.Info("Publishing to channel: %s with %d messages", "channel", targetGraderChannel, "length", minLen)
 
-	pipe := s.client.TxPipeline()
-	pipe.RPush(ctx, targetChannel, message)
-	pipe.IncrBy(ctx, fmt.Sprintf("%s:length", targetChannel), int64(njobs))
+	trans = s.client.TxPipeline()
+	trans.RPush(ctx, targetGraderChannel, message)
+	trans.IncrBy(ctx, fmt.Sprintf("%s:length", targetChannel), int64(njobs))
 
-	_, err := pipe.Exec(ctx)
+	_, err = trans.Exec(ctx)
 	if err == nil {
-		slog.Info("successfully published to queue", "targetChannel", targetChannel, "queueLength", minLen+njobs, "messageSize", len(message))
+		slog.Info("successfully published to queue", "queue", targetGraderChannel, "queueLength", minLen+njobs, "messageSize", len(message))
 	}
 	return err
 }
 
-func (s *service) LoadBalanceDequeue(ctx context.Context, channel string, njobs int) error {
+func (s *service) LoadBalanceGraderDequeue(ctx context.Context, channel string, njobs int) error {
 	s.locker.Lock()
 	defer s.locker.Unlock()
 
@@ -182,6 +205,7 @@ func (s *service) LoadBalanceDequeue(ctx context.Context, channel string, njobs 
 }
 
 func (s *service) Subscribe(ctx context.Context) error {
+	slog.Info("Starting cache subscriber...")
 	for {
 		select {
 		case <-ctx.Done():

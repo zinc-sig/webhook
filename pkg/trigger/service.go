@@ -216,20 +216,8 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 		if err != nil {
 			return err
 		}
-		data, err := s.cache.Read(ctx, cache.QueueKey)
-		if err != nil {
-			slog.Warn("Failed to read grader queues", "error", err)
-			return fmt.Errorf("failed to read grader queues: %s", err.Error())
-		}
-		if data == nil {
-			return fmt.Errorf("no grader queues configured")
-		}
-		var queues []string
-		for _, queue := range strings.Split(string(data), ",") {
-			queues = append(queues, fmt.Sprintf("%s:grader", queue))
-		}
 		slog.Info("sending job payload", "payload", string(job))
-		if err := s.cache.LoadBalancePublish(ctx, queues, job, len(gradingPayloads)); err != nil {
+		if err := s.cache.LoadBalanceGraderPublish(ctx, job, len(gradingPayloads)); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
@@ -349,21 +337,8 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 	if err != nil {
 		return err
 	}
-
-	data, err := s.cache.Read(ctx, cache.QueueKey)
-	if err != nil {
-		slog.Warn("Failed to read grader queues", "error", err)
-		return fmt.Errorf("failed to read grader queues: %s", err.Error())
-	}
-	if data == nil {
-		return fmt.Errorf("no grader queues configured")
-	}
-	var queues []string
-	for _, queue := range strings.Split(string(data), ",") {
-		queues = append(queues, fmt.Sprintf("%s:grader", queue))
-	}
 	slog.Info("sending job payload", "payload", string(jsonPayload))
-	if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload, len(gradingPayloads)); err != nil {
+	if err := s.cache.LoadBalanceGraderPublish(ctx, jsonPayload, len(gradingPayloads)); err != nil {
 		slog.Warn("Failed to publish grading payload", "error", err)
 		return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 	}
@@ -393,20 +368,8 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 		if err != nil {
 			return err
 		}
-		data, err := s.cache.Read(ctx, cache.QueueKey)
-		if err != nil {
-			slog.Warn("Failed to read grader queues", "error", err)
-			return fmt.Errorf("failed to read grader queues: %s", err.Error())
-		}
-		if data == nil {
-			return fmt.Errorf("no grader queues configured")
-		}
-		var queues []string
-		for _, queue := range strings.Split(string(data), ",") {
-			queues = append(queues, fmt.Sprintf("%s:grader", queue))
-		}
 		slog.Info("sending job payload", "payload", string(jsonPayload))
-		if err := s.cache.LoadBalancePublish(ctx, queues, jsonPayload, len(gradingPayloads)); err != nil {
+		if err := s.cache.LoadBalanceGraderPublish(ctx, jsonPayload, len(gradingPayloads)); err != nil {
 			slog.Warn("Failed to publish grading payload", "error", err)
 			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
 		}
