@@ -64,7 +64,7 @@ func (v *verifier) VerifyToken(ctx context.Context, tokenString string) (*jwt.To
 		return publicKey, nil
 	})
 
-	return token, fmt.Errorf("failed to parse token: %w", err)
+	return token, err
 }
 
 var Module = fx.Module(

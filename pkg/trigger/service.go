@@ -96,7 +96,7 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 }
 
 func (s *service) SyncEnrollment(ctx context.Context) error {
-	courses := []string{"COMP1023", "COMP2011", "COMP2012", "COMP2211"}
+	courses := []string{"COMP1023", "COMP2011", "COMP2012", "COMP2211", "COMP2012H"}
 
 	for _, course := range courses {
 		enrollmentMap, err := s.repository.GetStudentCourseEnrollmentMap(course)
@@ -226,6 +226,108 @@ func (s *service) DecompressSubmission(ctx context.Context, payload json.RawMess
 	return nil
 }
 
+// processValgrindReports processes valgrind reports according to visibility rules
+// Replicates TypeScript behavior from /tmp/grading.ts lines 16-39
+func processValgrindReports(stageReport json.RawMessage, isFinal bool) []ValgrindReport {
+	var valgrindReports []ValgrindReport
+	if err := json.Unmarshal(stageReport, &valgrindReports); err != nil {
+		return nil
+	}
+
+	for i, report := range valgrindReports {
+		switch report.Visibility {
+		case "ALWAYS_HIDDEN":
+			valgrindReports[i].Stdout = []string{}
+			valgrindReports[i].Errors = []ValgrindReportError{}
+			// TypeScript returns the modified report here
+			continue
+
+		case "VISIBLE_AFTER_GRADING":
+			if !isFinal {
+				valgrindReports[i].Stdout = []string{}
+				valgrindReports[i].Errors = []ValgrindReportError{}
+				// TypeScript returns the modified report here
+				continue
+			}
+			// BUG: TypeScript is missing 'return report' here at line 28
+			// This causes execution to continue to line 29 and beyond
+			// In Go, we don't add 'continue' to replicate this bug
+
+		case "VISIBLE_AFTER_GRADING_IF_FAILED":
+			// TypeScript condition: !is_final || !report.isCorrect (line 30)
+			// This means: hide data if not final OR if test failed
+			if !isFinal || !report.IsCorrect {
+				valgrindReports[i].Stdout = []string{}
+				valgrindReports[i].Errors = []ValgrindReportError{}
+				// TypeScript returns the modified report here
+				continue
+			}
+			// BUG: TypeScript is missing 'return report' here at line 34
+			// This causes execution to continue to case 'ALWAYS_VISIBLE'
+			// In Go, we don't add 'continue' to replicate this bug
+
+		case "ALWAYS_VISIBLE":
+		default:
+			// TypeScript returns unmodified report here
+			// In Go, we do nothing and let the loop continue
+		}
+	}
+
+	return valgrindReports
+}
+
+// processStdioTestReports processes stdio test reports according to visibility rules
+// Replicates TypeScript behavior from /tmp/grading.ts lines 40-64
+func processStdioTestReports(stageReport json.RawMessage, isFinal bool) []StdioTestReport {
+	var stdioTestReports []StdioTestReport
+	if err := json.Unmarshal(stageReport, &stdioTestReports); err != nil {
+		slog.Warn("Failed to unmarshal stdio test reports", "error", err)
+		return nil
+	}
+
+	for i, report := range stdioTestReports {
+		switch report.Visibility {
+		case "ALWAYS_HIDDEN":
+			stdioTestReports[i].Stdout = []string{}
+			stdioTestReports[i].Expect = []string{}
+			stdioTestReports[i].Diff = []string{}
+			// TypeScript returns the modified report here
+			continue
+
+		case "VISIBLE_AFTER_GRADING":
+			if !isFinal {
+				stdioTestReports[i].Expect = []string{}
+				stdioTestReports[i].Diff = []string{}
+				// TypeScript returns the modified report here
+				continue
+			}
+			// BUG: TypeScript is missing 'return report' here at line 53
+			// This causes execution to continue to line 54 and beyond
+			// In Go, we don't add 'continue' to replicate this bug
+
+		case "VISIBLE_AFTER_GRADING_IF_FAILED":
+			// TypeScript condition: !is_final || !report.isCorrect (line 55)
+			// This means: hide data if not final OR if test failed
+			if !isFinal || !report.IsCorrect {
+				stdioTestReports[i].Expect = []string{}
+				stdioTestReports[i].Diff = []string{}
+				// TypeScript returns the modified report here
+				continue
+			}
+			// BUG: TypeScript is missing 'return report' here at line 59
+			// This causes execution to continue to case 'ALWAYS_VISIBLE'
+			// In Go, we don't add 'continue' to replicate this bug
+
+		case "ALWAYS_VISIBLE":
+		default:
+			// TypeScript returns unmodified report here
+			// In Go, we do nothing and let the loop continue
+		}
+	}
+
+	return stdioTestReports
+}
+
 func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMessage) error {
 	var report ReportRow
 	if err := json.Unmarshal(payload, &report); err != nil {
@@ -233,75 +335,55 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 		return fmt.Errorf("failed to unmarshal report data: %s", err.Error())
 	}
 
-	pipelineResults := report.PipelineResults
-
 	censoredReports := make(map[string]interface{})
 	var grade map[string]interface{}
 
-	for stage, stageReport := range pipelineResults.StageReports {
+	for stage, stageReport := range report.PipelineResults.StageReports {
 		switch stage {
 		case "valgrind":
-			var valgrindReports []ValgrindReport
-			if err := json.Unmarshal(stageReport, &valgrindReports); err == nil {
-				for i, r := range valgrindReports {
-					switch r.Visibility {
-					case "ALWAYS_HIDDEN":
-						valgrindReports[i].Stdout = []string{}
-						valgrindReports[i].Errors = []ValgrindReportError{}
-					case "VISIBLE_AFTER_GRADING":
-						if !report.IsFinal {
-							valgrindReports[i].Stdout = []string{}
-							valgrindReports[i].Errors = []ValgrindReportError{}
-						}
-					case "VISIBLE_AFTER_GRADING_IF_FAILED":
-						if !report.IsFinal || r.IsCorrect {
-							valgrindReports[i].Stdout = []string{}
-							valgrindReports[i].Errors = []ValgrindReportError{}
-						}
-					}
-				}
-				censoredReports[stage] = valgrindReports
+			// Process valgrind reports
+			if processed := processValgrindReports(stageReport, report.IsFinal); processed != nil {
+				censoredReports[stage] = processed
 			}
+			// BUG: TypeScript is missing 'break' here at line 39 of /tmp/grading.ts
+			// This causes the 'valgrind' case to fall through to 'stdioTest'
+			// In Go, we explicitly use 'fallthrough' to replicate this bug
+			fallthrough
+
 		case "stdioTest":
-			var stdioTestReports []StdioTestReport
-			if err := json.Unmarshal(stageReport, &stdioTestReports); err == nil {
-				for i, r := range stdioTestReports {
-					switch r.Visibility {
-					case "ALWAYS_HIDDEN":
-						stdioTestReports[i].Stdout = []string{}
-						stdioTestReports[i].Expect = []string{}
-						stdioTestReports[i].Diff = []string{}
-					case "VISIBLE_AFTER_GRADING":
-						if !report.IsFinal {
-							stdioTestReports[i].Expect = []string{}
-							stdioTestReports[i].Diff = []string{}
-						}
-					case "VISIBLE_AFTER_GRADING_IF_FAILED":
-						if !report.IsFinal || r.IsCorrect {
-							stdioTestReports[i].Expect = []string{}
-							stdioTestReports[i].Diff = []string{}
-						}
-					}
-				}
-				censoredReports[stage] = stdioTestReports
+			// BUG: Due to fallthrough from 'valgrind' case, this will execute
+			// for BOTH 'valgrind' AND 'stdioTest' stages
+			// When stage == "valgrind", this will try to unmarshal valgrind data
+			// as StdioTestReport which will likely fail silently
+			if processed := processStdioTestReports(stageReport, report.IsFinal); processed != nil {
+				censoredReports[stage] = processed
 			}
+			// TypeScript has 'break' here at line 65, Go doesn't need it
+
 		case "score":
+			// TypeScript extracts first element of score array (lines 66-69)
 			var scoreReportObj []map[string]interface{}
 			if err := json.Unmarshal(stageReport, &scoreReportObj); err == nil && len(scoreReportObj) > 0 {
 				grade = scoreReportObj[0]
 			}
+			// TypeScript has 'break' here at line 69, Go doesn't need it
+
 		default:
+			// Pass through any other stages unchanged (lines 70-72)
 			censoredReports[stage] = stageReport
+			// TypeScript has 'break' here at line 72, Go doesn't need it
 		}
 	}
 
-	if grade != nil && pipelineResults.ScoreReports != nil {
+	// Handle score details - TypeScript lines 75-77
+	if grade != nil && report.PipelineResults.ScoreReports != nil {
 		var scoreReportsObj interface{}
-		if err := json.Unmarshal(pipelineResults.ScoreReports, &scoreReportsObj); err == nil {
+		if err := json.Unmarshal(report.PipelineResults.ScoreReports, &scoreReportsObj); err == nil {
 			grade["details"] = scoreReportsObj
 		}
 	}
 
+	// Update the report entry with censored data (lines 78-89)
 	update := map[string]interface{}{
 		"id":               report.ID,
 		"sanitizedReports": censoredReports,
@@ -311,7 +393,8 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 		slog.Warn("Failed to update report entry", "reportID", report.ID, "error", err)
 		return fmt.Errorf("failed to update report entry: %s", err.Error())
 	}
-	slog.Info("updated report entry", "id", report.ID, "sanitizedReports", censoredReports, "grader", grade)
+	// TypeScript logs success at line 89
+	slog.Info("Post-grading artifacts generation completed", "reportID", report.ID)
 	return nil
 }
 
