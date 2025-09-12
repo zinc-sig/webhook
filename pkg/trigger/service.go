@@ -322,27 +322,31 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		return fmt.Errorf("failed to get submissions: %s", err.Error())
 	}
 
-	var gradingPayloads []GradingPayload
-
+	// Decompose submissions in a batch and send to grader one by one for load balancing
 	for _, submission := range submissions {
-		gradingPayloads = append(gradingPayloads, GradingPayload{
-			ID:            submission.ID,
-			ExtractedPath: submission.ExtractedPath,
-			CreatedAt:     submission.CreatedAt.Time(),
-		})
+
+		gradingPayloads := []GradingPayload{
+			{
+				ID:            submission.ID,
+				ExtractedPath: submission.ExtractedPath,
+				CreatedAt:     submission.CreatedAt.Time(),
+			},
+		}
+
+		// Build job payload
+		jsonPayload, err := s.buildGradingJobPayload("manualGradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
+		if err != nil {
+			return err
+		}
+		slog.Info("sending job payload", "payload", string(jsonPayload))
+		if err := s.cache.LoadBalanceGraderPublish(ctx, jsonPayload, len(gradingPayloads)); err != nil {
+			slog.Warn("Failed to publish grading payload", "error", err)
+			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
+		}
+
 	}
 
-	// Build job payload
-	jsonPayload, err := s.buildGradingJobPayload("manualGradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
-	if err != nil {
-		return err
-	}
-	slog.Info("sending job payload", "payload", string(jsonPayload))
-	if err := s.cache.LoadBalanceGraderPublish(ctx, jsonPayload, len(gradingPayloads)); err != nil {
-		slog.Warn("Failed to publish grading payload", "error", err)
-		return fmt.Errorf("failed to publish grading payload: %s", err.Error())
-	}
-	slog.Info("manual grading task scheduled", "assignmentConfigID", assignmentConfigId, "submissionCount", len(gradingPayloads), "initiatedBy", req.InitiatedBy)
+	slog.Info("manual grading task scheduled", "assignmentConfigID", assignmentConfigId, "submissionCount", len(submissions), "initiatedBy", req.InitiatedBy)
 	return nil
 }
 
@@ -354,26 +358,31 @@ func (s *service) GradingTask(ctx context.Context, payload *GradingTaskRequest) 
 	}
 
 	if *submissions.AssignmentConfig.StopCollectionAt == payload.Payload.StopCollectionAt {
-		// Push job to redis
-		gradingPayloads := make([]GradingPayload, 0, len(submissions.AssignmentConfig.Submissions))
+		// Decompose submissions in a batch and send to grader one by one for load balancing
 		for _, submission := range submissions.AssignmentConfig.Submissions {
-			gradingPayloads = append(gradingPayloads, GradingPayload{
-				ID:            submission.ID,
-				ExtractedPath: submission.ExtractedPath,
-				CreatedAt:     submission.CreatedAt.Time(),
-			})
+
+			gradingPayloads := []GradingPayload{
+				{
+					ID:            submission.ID,
+					ExtractedPath: submission.ExtractedPath,
+					CreatedAt:     submission.CreatedAt.Time(),
+				},
+			}
+
+			// Build job payload
+			jsonPayload, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, payload.Payload.AssignmentConfigID, false, nil)
+			if err != nil {
+				return err
+			}
+			slog.Info("sending job payload", "payload", string(jsonPayload))
+			if err := s.cache.LoadBalanceGraderPublish(ctx, jsonPayload, len(gradingPayloads)); err != nil {
+				slog.Warn("Failed to publish grading payload", "error", err)
+				return fmt.Errorf("failed to publish grading payload: %s", err.Error())
+			}
+
 		}
-		// Build job payload
-		jsonPayload, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, payload.Payload.AssignmentConfigID, false, nil)
-		if err != nil {
-			return err
-		}
-		slog.Info("sending job payload", "payload", string(jsonPayload))
-		if err := s.cache.LoadBalanceGraderPublish(ctx, jsonPayload, len(gradingPayloads)); err != nil {
-			slog.Warn("Failed to publish grading payload", "error", err)
-			return fmt.Errorf("failed to publish grading payload: %s", err.Error())
-		}
-		slog.Info("grading task scheduled for batch processing", "assignmentConfigID", payload.Payload.AssignmentConfigID, "submissionCount", len(gradingPayloads), "stopCollectionAt", payload.Payload.StopCollectionAt)
+
+		slog.Info("grading task scheduled for processing", "assignmentConfigID", payload.Payload.AssignmentConfigID, "submissionCount", len(submissions.AssignmentConfig.Submissions), "stopCollectionAt", payload.Payload.StopCollectionAt)
 	}
 	return nil
 }
