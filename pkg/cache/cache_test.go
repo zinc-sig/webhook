@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -288,7 +289,7 @@ func TestLoadBalanceIntegration(t *testing.T) {
 			cache.Module,
 			fx.Supply(
 				&cache.Config{
-					DSN: "10.35.53.115:21862",
+					DSN: fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT")),
 				},
 			),
 			fx.Invoke(
