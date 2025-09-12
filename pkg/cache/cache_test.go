@@ -3,8 +3,11 @@ package cache_test
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log/slog"
+	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,9 +17,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/zinc-sig/webhook/pkg/cache"
 	"github.com/zinc-sig/webhook/pkg/mock"
+	"github.com/zinc-sig/webhook/pkg/trigger"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
+
+var runIntegrationTests = flag.Bool("integration", false, "set to true to run integration tests")
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	m.Run()
+}
 
 func TestLlen(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
@@ -50,12 +61,13 @@ func TestLoadBalancePublish(t *testing.T) {
 			t,
 			mock.ProvideMockCacheService(t),
 			fx.Invoke(
-				func(cache cache.Service, client *redis.Client) {
+				func(s cache.Service, client *redis.Client) {
 					jobs := []int{1, 3, 5, 1, 10, 1, 3}
 					channels := []string{"channel1", "channel2", "channel3"}
+					s.Put(t.Context(), cache.QueueKey, []byte(strings.Join(channels, ",")), 0)
 
 					for idx, njobs := range jobs {
-						err := cache.LoadBalancePublish(t.Context(), channels, []byte(fmt.Sprintf("test%d", idx)), njobs)
+						err := s.LoadBalanceGraderPublish(t.Context(), []byte(fmt.Sprintf("test%d", idx)), njobs)
 						assert.NoError(t, err, "failed to load balance publish")
 					}
 
@@ -66,7 +78,7 @@ func TestLoadBalancePublish(t *testing.T) {
 					}
 
 					for _, channel := range channels {
-						content, err := client.LRange(t.Context(), channel, 0, -1).Result()
+						content, err := client.LRange(t.Context(), fmt.Sprintf("%s:grader", channel), 0, -1).Result()
 						assert.NoError(t, err, "failed to read channel content")
 						assert.ElementsMatchf(t, content, expected[channel], "channel content does not match for channel %s", channel)
 					}
@@ -83,29 +95,31 @@ func TestLoadBalancePublish(t *testing.T) {
 			t,
 			mock.ProvideMockCacheService(t),
 			fx.Invoke(
-				func(cache cache.Service, client *redis.Client) {
+				func(s cache.Service, client *redis.Client) {
 					var wg sync.WaitGroup
 
 					channels := []string{"channel1", "channel2", "channel3"}
+					s.Put(t.Context(), cache.QueueKey, []byte(strings.Join(channels, ",")), 0)
+
 					for range 99 {
 						wg.Add(1)
 						go func() {
 							defer wg.Done()
-							err := cache.LoadBalancePublish(t.Context(), channels, []byte("hello"), 3)
+							err := s.LoadBalanceGraderPublish(t.Context(), []byte("hello"), 3)
 							assert.NoError(t, err, "failed to load balance publish")
 						}()
 					}
 					wg.Wait()
 
 					// Check that messages are distributed across channels
-					length1, err := client.LLen(t.Context(), "channel1").Result()
-					assert.NoError(t, err, "failed to get list length for channel1")
+					length1, err := client.LLen(t.Context(), "channel1:grader").Result()
+					assert.NoError(t, err, "failed to get list length for channel1:grader")
 
-					length2, err := client.LLen(t.Context(), "channel2").Result()
-					assert.NoError(t, err, "failed to get list length for channel2")
+					length2, err := client.LLen(t.Context(), "channel2:grader").Result()
+					assert.NoError(t, err, "failed to get list length for channel2:grader")
 
-					length3, err := client.LLen(t.Context(), "channel3").Result()
-					assert.NoError(t, err, "failed to get list length for channel3")
+					length3, err := client.LLen(t.Context(), "channel3:grader").Result()
+					assert.NoError(t, err, "failed to get list length for channel3:grader")
 
 					assert.Equal(t, int64(33), length1)
 					assert.Equal(t, int64(33), length2)
@@ -126,8 +140,9 @@ func TestLoadBalanceDequeue(t *testing.T) {
 			t,
 			mock.ProvideMockCacheService(t),
 			fx.Invoke(
-				func(cache cache.Service, client *redis.Client) {
+				func(s cache.Service, client *redis.Client) {
 					channels := []string{"channel1", "channel2", "channel3"}
+					s.Put(t.Context(), cache.QueueKey, []byte(strings.Join(channels, ",")), 0)
 
 					// Pre-fill channels with lengths
 					for i, channel := range channels {
@@ -136,13 +151,13 @@ func TestLoadBalanceDequeue(t *testing.T) {
 					}
 
 					// Dequeue jobs
-					err := cache.LoadBalanceDequeue(t.Context(), "channel1", 5)
+					err := s.LoadBalanceGraderDequeue(t.Context(), "channel1", 5)
 					assert.NoError(t, err, "failed to load balance dequeue")
 
-					err = cache.LoadBalanceDequeue(t.Context(), "channel2", 15)
+					err = s.LoadBalanceGraderDequeue(t.Context(), "channel2", 15)
 					assert.NoError(t, err, "failed to load balance dequeue")
 
-					err = cache.LoadBalanceDequeue(t.Context(), "channel3", 8)
+					err = s.LoadBalanceGraderDequeue(t.Context(), "channel3", 8)
 					assert.NoError(t, err, "failed to load balance dequeue")
 
 					// Check final lengths
@@ -166,7 +181,7 @@ func TestLoadBalanceDequeue(t *testing.T) {
 	})
 }
 
-func TestLoadBalanceIntegration(t *testing.T) {
+func TestLoadBalance(t *testing.T) {
 	t.Run("publish and dequeue", func(t *testing.T) {
 		app := fxtest.New(
 			t,
@@ -189,7 +204,7 @@ func TestLoadBalanceIntegration(t *testing.T) {
 						}
 						slog.Info("Processing job", "type", jobType, "queue", queue, "payload", data, "is_batch", len(data.Reports) > 1)
 
-						if err := s.LoadBalanceDequeue(ctx, queue, len(data.Reports)); err != nil {
+						if err := s.LoadBalanceGraderDequeue(ctx, queue, len(data.Reports)); err != nil {
 							slog.Warn("Failed to load balance dequeue", "error", err)
 							return err
 						}
@@ -208,7 +223,7 @@ func TestLoadBalanceIntegration(t *testing.T) {
 
 					// Publish jobs
 					for i := range 30 {
-						err := s.LoadBalancePublish(t.Context(), channels, []byte(fmt.Sprintf("job%d", i)), 1)
+						err := s.LoadBalanceGraderPublish(t.Context(), []byte(fmt.Sprintf("job%d", i)), 1)
 						assert.NoError(t, err, "failed to load balance publish")
 					}
 
@@ -258,4 +273,167 @@ func TestLoadBalanceIntegration(t *testing.T) {
 		app.RequireStart()
 		t.Cleanup(app.RequireStop)
 	})
+}
+
+func TestLoadBalanceIntegration(t *testing.T) {
+	t.Run("publish and dequeue", func(t *testing.T) {
+
+		if !*runIntegrationTests {
+			t.Skip("Skipping integration test; use -integration flag to run")
+		}
+
+		wg := sync.WaitGroup{}
+
+		app := fxtest.New(
+			t,
+			cache.Module,
+			fx.Supply(
+				&cache.Config{
+					DSN: fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT")),
+				},
+			),
+			fx.Invoke(
+				func(lifecycle fx.Lifecycle, s cache.Service, p cache.ServiceParams) {
+					lifecycle.Append(fx.Hook{
+						OnStart: func(ctx context.Context) error {
+							const testID = 1
+
+							client := redis.NewClient(&redis.Options{
+								Addr:     p.Config.DSN, // e.g., "localhost:6379"
+								Password: "",           // no password set
+								DB:       0,            // use default DB
+							})
+
+							data, err := s.Read(t.Context(), cache.QueueKey)
+							assert.NoError(t, err, "failed to read grader queues")
+							assert.NotNil(t, data, "grader queues data is nil")
+
+							// Channels of grader (e.g. ["channel1", "channel2", "channel3"])
+							channels := strings.Split(string(data), ",")
+
+							slog.Info("Grader Channels: %v\n", "channels", channels)
+
+							initQueueLengths := make(map[string]int)
+							// Check initial lengths
+							for _, channel := range channels {
+								length, err := client.Get(t.Context(), fmt.Sprintf("%s:length", channel)).Int()
+								if err == redis.Nil {
+									length = 0 // Channel does not exist, treat as empty
+								} else if err != nil {
+									slog.Warn("Failed to get length of channel", "channel", channel, "error", err)
+									continue
+								}
+
+								initQueueLengths[channel] = length
+							}
+
+							slog.Info("Initial Queue Lengths: %v\n", "initQueueLengths", initQueueLengths)
+
+							// Simulate 30 rounds of grading tasks
+							for range 30 {
+
+								// Create a batch of random [1, 5] jobs at a time
+								gradingPayloads := []trigger.GradingPayload{}
+								for range rand.Intn(5) + 1 {
+									gradingPayloads = append(gradingPayloads, trigger.GradingPayload{
+										ID:            testID,
+										ExtractedPath: fmt.Sprintf("extracted/%d", testID),
+										CreatedAt:     time.Now(),
+									})
+								}
+
+								job, err := buildGradingJobPayload("gradingTask", gradingPayloads, testID, false, nil)
+								assert.NoError(t, err, "failed to build grading job payload")
+
+								slog.Info("sending job payload", "payload", string(job))
+								err = s.LoadBalanceGraderPublish(t.Context(), job, len(gradingPayloads))
+								assert.NoError(t, err, "failed to load balance publish")
+
+								slog.Info("grading job scheduled for immediate processing", "submissionID", testID, "assignmentConfigID", testID, "isTest", false)
+
+							}
+
+							// Wait for all processing to complete
+							// Subscribe is already running in the background
+							wg.Add(1)
+							go func() {
+								defer wg.Done()
+
+								// Initial wait before checking
+								time.Sleep(5 * time.Second)
+
+								for {
+									time.Sleep(2 * time.Second)
+									allProcessed := true
+									// Check current lengths
+									for _, channel := range channels {
+										length, err := client.Get(t.Context(), fmt.Sprintf("%s:length", channel)).Int()
+										if err == redis.Nil {
+											length = 0 // Channel does not exist, treat as empty
+										} else if err != nil {
+											slog.Warn("Failed to get length of channel", "channel", channel, "error", err)
+											continue
+										}
+
+										slog.Info("Current channel length", "channel", channel, "length", length)
+										channelProcessed := length <= initQueueLengths[channel]
+										allProcessed = allProcessed && channelProcessed
+									}
+
+									// If all channels are processed, exit the loop
+									if allProcessed {
+										break
+									}
+								}
+
+							}()
+							return nil
+						},
+					})
+				},
+			),
+		)
+
+		app.RequireStart()
+
+		// Wait for processing goroutine to finish
+		wg.Wait()
+
+		t.Cleanup(app.RequireStop)
+	})
+}
+
+func buildGradingJobPayload(jobType string, gradingPayloads []trigger.GradingPayload, assignmentConfigID int, isTest bool, initiatedBy *int) ([]byte, error) {
+	// Build the payload map
+	payloadMap := map[string]interface{}{
+		"submissions":          gradingPayloads,
+		"assignment_config_id": assignmentConfigID,
+		"isTest":               isTest,
+	}
+
+	// Add optional initiatedBy field if provided
+	if initiatedBy != nil {
+		payloadMap["initiatedBy"] = *initiatedBy
+	} else {
+		payloadMap["initiatedBy"] = nil
+	}
+
+	// Marshal the payload
+	payload, err := json.Marshal(payloadMap)
+	if err != nil {
+		slog.Warn("Failed to marshal grading payload", "error", err)
+		return nil, fmt.Errorf("failed to marshal grading payload: %s", err.Error())
+	}
+
+	// Create the job wrapper
+	job, err := json.Marshal(map[string]interface{}{
+		"job":     jobType,
+		"payload": string(payload),
+	})
+	if err != nil {
+		slog.Warn("Failed to marshal job payload", "error", err)
+		return nil, fmt.Errorf("failed to marshal job payload: %s", err.Error())
+	}
+
+	return job, nil
 }
