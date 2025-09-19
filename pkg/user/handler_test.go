@@ -47,8 +47,13 @@ func (m *MockCache) Publish(ctx context.Context, channel string, message []byte)
 	return args.Error(0)
 }
 
-func (m *MockCache) LoadBalancePublish(ctx context.Context, channels []string, message []byte) error {
-	args := m.Called(ctx, channels, message)
+func (m *MockCache) LoadBalanceGraderPublish(ctx context.Context, message []byte, njobs int) error {
+	args := m.Called(ctx, message, njobs)
+	return args.Error(0)
+}
+
+func (m *MockCache) LoadBalanceGraderDequeue(ctx context.Context, channel string, njobs int) error {
+	args := m.Called(ctx, channel, njobs)
 	return args.Error(0)
 }
 

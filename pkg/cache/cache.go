@@ -24,7 +24,7 @@ var Module = fx.Module(
 	fx.Invoke(func(lifecycle fx.Lifecycle, cache Service) {
 		lifecycle.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
-				cache.RegisterHandler("doneGrading", func(ctx context.Context, jobType, queue string, payload json.RawMessage) error {
+				cache.RegisterHandler("doneGrading", func(ctx context.Context, jobType, channel string, payload json.RawMessage) error {
 					var payloadJson string
 					if err := json.Unmarshal(payload, &payloadJson); err != nil {
 						slog.Warn("Failed to unmarshal payload", "error", err)
@@ -35,14 +35,20 @@ var Module = fx.Module(
 						slog.Warn("Failed to unmarshal payload", "error", err)
 						return err
 					}
-					slog.Info("Processing job", "type", jobType, "queue", queue, "payload", data, "is_batch", len(data.Reports) > 1)
-					
+					slog.Info("Processing job", "type", jobType, "channel", channel, "payload", data, "is_batch", len(data.Reports) > 1)
+
+					if err := cache.LoadBalanceGraderDequeue(ctx, channel, len(data.Reports)); err != nil {
+						slog.Warn("Failed to load balance dequeue", "error", err)
+						return err
+					}
+
 					// Log successful processing
 					var reportIDs []int
 					for _, report := range data.Reports {
 						reportIDs = append(reportIDs, report.ID)
 					}
-					slog.Info("doneGrading processed successfully", "reportIDs", reportIDs, "reportCount", len(data.Reports), "queue", queue)
+					slog.Info("doneGrading processed successfully", "reportIDs", reportIDs, "reportCount", len(data.Reports), "channel", channel)
+
 					return nil
 				})
 				go cache.Subscribe(context.Background())

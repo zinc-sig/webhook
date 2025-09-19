@@ -39,7 +39,7 @@ jobs:
 
   build-and-push-image:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main') || github.event.inputs.produce_container_image == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
