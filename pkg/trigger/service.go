@@ -417,7 +417,7 @@ func (s *service) ManualGradingTask(ctx context.Context, assignmentConfigId int,
 		}
 
 		// Build job payload
-		jsonPayload, err := s.buildGradingJobPayload("manualGradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
+		jsonPayload, err := s.buildGradingJobPayload("gradingTask", gradingPayloads, assignmentConfigId, false, &req.InitiatedBy)
 		if err != nil {
 			return err
 		}
