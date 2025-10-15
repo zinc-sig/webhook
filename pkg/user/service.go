@@ -63,13 +63,20 @@ func getCookie(cookieHeader, cookieName string) (string, error) {
 	return cookie.Value, nil
 }
 
-func (s *service) CreateSession(ctx context.Context, tokenSet []byte, expiresAt time.Time) (string, error) {
+func (s *service) CreateSession(ctx context.Context, tokenSet []byte, expiresAt time.Time, name, itsc string) (string, error) {
 	sessionIdBytes, err := auth.RandomBytes(16)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate session ID: %w", err)
 	}
+	_, err = s.repository.GetUser(ctx, itsc, name)
+	if err != nil {
+		return "", fmt.Errorf("failed to get or create user: %w", err)
+	}
 	sessionId := hex.EncodeToString(sessionIdBytes)
-	err = s.cache.Put(ctx, sessionId, tokenSet, time.Until(expiresAt))
+	hmac := hmac.New(sha1.New, []byte(s.sessionSecret))
+	hmac.Write([]byte(sessionId))
+	key := base64.StdEncoding.EncodeToString(hmac.Sum(nil))
+	err = s.cache.Put(ctx, key, tokenSet, time.Until(expiresAt))
 	if err != nil {
 		return "", fmt.Errorf("failed to store session in cache: %w", err)
 	}

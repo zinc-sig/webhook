@@ -22,10 +22,13 @@ func (t TimeWithoutZone) Time() time.Time {
 }
 
 type Assignment struct {
-	AssignmentConfig struct {
-		StopCollectionAt *string      `json:"stopCollectionAt"`
-		Submissions      []Submission `json:"submissions"`
-	} `json:"assignmentConfig"`
+	AssignmentConfig AssignmentConfig `json:"assignmentConfig"`
+}
+
+type AssignmentConfig struct {
+	DueAt            *TimeWithoutZone `json:"dueAt"`
+	StopCollectionAt *string          `json:"stopCollectionAt"`
+	Submissions      []Submission     `json:"submissions"`
 }
 
 type Submission struct {
@@ -248,4 +251,44 @@ func moveDirectory(src, dest string) error {
 
 	// If copy is successful, remove the original directory
 	return os.RemoveAll(src)
+}
+
+func (r *repository) GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response interface{}) error {
+	req := graphql.NewRequest(getSubmissionGrades)
+	req.Var("id", assignmentConfigID)
+
+	if err := r.client.Run(ctx, req, response); err != nil {
+		slog.Warn("Failed to get submission grades", "assignmentConfigID", assignmentConfigID, "error", err)
+		return fmt.Errorf("failed to get submission grades: %s", err.Error())
+	}
+
+	return nil
+}
+
+func (r *repository) GetSubmissionByID(ctx context.Context, submissionID int, response interface{}) error {
+	req := graphql.NewRequest(getSubmissionByID)
+	req.Var("id", submissionID)
+
+	if err := r.client.Run(ctx, req, response); err != nil {
+		slog.Warn("Failed to get submission by ID", "submissionID", submissionID, "error", err)
+		return fmt.Errorf("failed to get submission by ID: %s", err.Error())
+	}
+
+	return nil
+}
+
+func (r *repository) GetSubmissionFilePath(storedName string) string {
+	return fmt.Sprintf("%s/%s", r.sharedMountPath, storedName)
+}
+
+func (r *repository) GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response interface{}) error {
+	req := graphql.NewRequest(getAllSubmissionsForAssignmentConfig)
+	req.Var("assignmentConfigId", assignmentConfigID)
+
+	if err := r.client.Run(ctx, req, response); err != nil {
+		slog.Warn("Failed to get all submissions for assignment config", "assignmentConfigID", assignmentConfigID, "error", err)
+		return fmt.Errorf("failed to get all submissions for assignment config: %s", err.Error())
+	}
+
+	return nil
 }

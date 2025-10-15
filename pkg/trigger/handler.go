@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -98,5 +99,107 @@ func UpdateGraderQueues(s *service) echo.HandlerFunc {
 			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to update grader queues", Message: err.Error()})
 		}
 		return c.JSON(http.StatusOK, api.Response{Status: "ok"})
+	}
+}
+
+func DownloadGrades(s *service) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		// Get query parameters
+		assignmentConfigIDStr := c.QueryParam("assignmentConfigId")
+		viewingTaskAssignedGroups := c.QueryParam("viewingTaskAssignedGroups")
+
+		if assignmentConfigIDStr == "" {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "missing assignmentConfigId query parameter", Message: "assignmentConfigId is required"})
+		}
+
+		assignmentConfigID, err := strconv.Atoi(assignmentConfigIDStr)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid assignmentConfigId", Message: err.Error()})
+		}
+
+		// Generate Excel file
+		excelFile, err := s.GenerateGradesExcel(c.Request().Context(), assignmentConfigID, viewingTaskAssignedGroups)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to generate grades Excel", Message: err.Error()})
+		}
+		defer excelFile.Close()
+
+		// Set response headers
+		c.Response().Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		c.Response().Header().Set("Content-Disposition", "attachment; filename=Report.xlsx")
+
+		// Write Excel file to response
+		if err := excelFile.Write(c.Response().Writer); err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to write Excel file", Message: err.Error()})
+		}
+
+		return nil
+	}
+}
+
+func DownloadSubmissions(s *service) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		// Get query parameter
+		assignmentConfigIDStr := c.QueryParam("assignmentConfigId")
+		if assignmentConfigIDStr == "" {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "missing assignmentConfigId query parameter", Message: "assignmentConfigId is required"})
+		}
+
+		assignmentConfigID, err := strconv.Atoi(assignmentConfigIDStr)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid assignmentConfigId", Message: err.Error()})
+		}
+
+		// Generate zip archive
+		zipBuffer, filename, err := s.GenerateSubmissionsZip(c.Request().Context(), assignmentConfigID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to generate submissions zip", Message: err.Error()})
+		}
+
+		// Set response headers
+		c.Response().Header().Set("Content-Type", "application/octet-stream")
+		c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+
+		// Write zip to response
+		if _, err := c.Response().Write(zipBuffer.Bytes()); err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to write zip file", Message: err.Error()})
+		}
+
+		return nil
+	}
+}
+
+func DownloadSubmission(s *service) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		// Get submission ID from path parameter
+		submissionIDStr := c.Param("id")
+		if submissionIDStr == "" {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "missing submission id", Message: "submission id is required"})
+		}
+
+		submissionID, err := strconv.Atoi(submissionIDStr)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid submission id", Message: err.Error()})
+		}
+
+		// Get submission metadata
+		submission, err := s.GetSubmissionForDownload(c.Request().Context(), submissionID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to get submission", Message: err.Error()})
+		}
+
+		// Get file path
+		filePath := s.repository.GetSubmissionFilePath(submission.Submission.StoredName)
+
+		// Generate filename with timestamp prefix
+		timestamp := submission.Submission.CreatedAt.Time().UnixMilli()
+		filename := fmt.Sprintf("%d_%s", timestamp, submission.Submission.UploadName)
+
+		// Set response headers
+		c.Response().Header().Set("Content-Type", "application/octet-stream")
+		c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+
+		// Stream the file to response
+		return c.File(filePath)
 	}
 }
