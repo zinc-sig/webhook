@@ -1,8 +1,10 @@
 build:
   go build -o bin/webhook -ldflags="-s -w" ./cmd
 
-run:
-  ./bin/webhook
+run: *ARGS: build
+	@./bin/{{app_name}} {{ARGS}}
+
+simulate: *ARGS: (run "simulate" ARGS)
 
 test:
   go test ./...
