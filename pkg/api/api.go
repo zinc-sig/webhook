@@ -24,6 +24,7 @@ type ApiParams struct {
 
 type Response struct {
 	Status string `json:"status"`
+	Data   any    `json:"data,omitempty"`
 }
 
 type ErrorResponse struct {

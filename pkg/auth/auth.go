@@ -2,8 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -65,6 +67,14 @@ func (v *verifier) VerifyToken(ctx context.Context, tokenString string) (*jwt.To
 	})
 
 	return token, err
+}
+
+func RandomBytes(size int) ([]byte, error) {
+	b := make([]byte, size)
+	if _, err := io.ReadFull(rand.Reader, b); err != nil {
+		return nil, fmt.Errorf("failed to read random bytes: %v", err)
+	}
+	return b, nil
 }
 
 var Module = fx.Module(

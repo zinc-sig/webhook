@@ -5,12 +5,14 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/labstack/echo/v4"
@@ -47,6 +49,7 @@ func NewService(p ServiceParams) *service {
 
 func (s *service) RegisterRoutes(e *echo.Echo) {
 	e.POST("/identity", Identity(s))
+	e.POST("/sessions", NewSession(s))
 }
 
 func getCookie(cookieHeader, cookieName string) (string, error) {
@@ -58,6 +61,19 @@ func getCookie(cookieHeader, cookieName string) (string, error) {
 		return "", err
 	}
 	return cookie.Value, nil
+}
+
+func (s *service) CreateSession(ctx context.Context, tokenSet []byte, expiresAt time.Time) (string, error) {
+	sessionIdBytes, err := auth.RandomBytes(16)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate session ID: %w", err)
+	}
+	sessionId := hex.EncodeToString(sessionIdBytes)
+	err = s.cache.Put(ctx, sessionId, tokenSet, time.Until(expiresAt))
+	if err != nil {
+		return "", fmt.Errorf("failed to store session in cache: %w", err)
+	}
+	return sessionId, nil
 }
 
 func (s *service) ValidateSession(ctx context.Context, cookieString string) (*repository.User, error) {
