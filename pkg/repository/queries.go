@@ -287,17 +287,3 @@ mutation addReportArtifacts($id: bigint!, $sanitizedReports: jsonb!, $grade: jso
     id
   }
 }`
-
-const createUserIfNotExist = `
-mutation createUserIfNotExist($itsc:String!, $name:String!) {
-  createUser(
-    object:{
-      itsc: $itsc
-      name: $name
-    }
-    on_conflict: {
-      constraint: users_itsc_key
-      update_columns: [createdAt]
-    }
-  ){ id }
-}`

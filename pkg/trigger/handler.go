@@ -156,16 +156,11 @@ func DownloadSubmissions(s *service) echo.HandlerFunc {
 			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to generate submissions zip", Message: err.Error()})
 		}
 
-		// Set response headers
-		c.Response().Header().Set("Content-Type", "application/octet-stream")
+		// Set Content-Disposition header for filename
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 
-		// Write zip to response
-		if _, err := c.Response().Write(zipBuffer.Bytes()); err != nil {
-			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to write zip file", Message: err.Error()})
-		}
-
-		return nil
+		// Write zip to response atomically
+		return c.Blob(http.StatusOK, "application/octet-stream", zipBuffer.Bytes())
 	}
 }
 
