@@ -106,7 +106,7 @@ func seedDatabase(dsn string, createDummy bool) error {
 	for _, typeName := range assignmentTypes {
 		result, err := tx.Exec(`
 			INSERT INTO assignment_types (name, created_at, updated_at)
-			SELECT $1, NOW(), NOW()
+			SELECT $1::VARCHAR, NOW(), NOW()
 			WHERE NOT EXISTS (
 				SELECT 1 FROM assignment_types WHERE name = $1
 			)
@@ -172,7 +172,7 @@ func seedDatabase(dsn string, createDummy bool) error {
 
 		// Set up assignment config dates
 		now := time.Now()
-		dueAt := now.Add(7 * 24 * time.Hour)        // Due in 7 days
+		dueAt := now.Add(7 * 24 * time.Hour)            // Due in 7 days
 		stopCollectionAt := now.Add(8 * 24 * time.Hour) // Stop collection 1 day after due
 
 		// Check if assignment config already exists
