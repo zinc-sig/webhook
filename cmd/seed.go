@@ -145,6 +145,18 @@ func seedDatabase(dsn string, createDummy bool) error {
 		}
 		slog.Info("Ensured dummy course exists", "code", "COMP0000", "id", courseID)
 
+		// Insert submission entry
+		var submissionID int64
+		err = tx.QueryRow(`
+			INSERT INTO submissions (stored_name, upload_name, extracted_path, size, checksum, fail_reason, remarks, assignment_config_id, user_id, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, NOW(), NOW())
+			RETURNING id
+			`, "TBA", "submission", "TBA", "1", "1", "Test", `{"remarks": "idk"}`, "1", "1").Scan(&submissionID)
+		if err != nil {
+			return fmt.Errorf("failed to insert submission %w", err)
+		}
+		slog.Info("Ensured submission exists", "code", "COMP0000", "id", submissionID)
+
 		// Check if dummy assignment already exists
 		var assignmentID int64
 		err = tx.QueryRow(`

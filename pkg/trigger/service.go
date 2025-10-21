@@ -154,7 +154,7 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 	e.PUT("/grader/queues", UpdateGraderQueues(s))
 	e.GET("/download/grades", DownloadGrades(s))
 	e.GET("/download/submissions", DownloadSubmissions(s))
-	e.GET("/download/submission/:id", DownloadSubmission(s))
+	e.GET("/download/submissions/:id", DownloadSubmission(s))
 }
 
 func (s *service) SyncEnrollment(ctx context.Context) error {
