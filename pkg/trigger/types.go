@@ -115,3 +115,97 @@ type GradingTaskRequest struct {
 		StopCollectionAt   string `json:"stop_collection_at"`
 	} `json:"payload"`
 }
+
+// Grade types for download grades functionality
+type GradeDetails struct {
+	AccScore float64       `json:"accScore"`
+	Reports  []SubGradeReport `json:"reports"`
+}
+
+type SubGradeReport struct {
+	Hash            string  `json:"hash"`
+	DisplayName     string  `json:"displayName"`
+	StageReportPath string  `json:"stageReportPath"`
+	Score           float64 `json:"score"`
+}
+
+type GradeReport struct {
+	Score   *float64      `json:"score"`
+	Details *GradeDetails `json:"details"`
+}
+
+type SubmissionReport struct {
+	Grade *GradeReport `json:"grade"`
+}
+
+type SubmissionUser struct {
+	ITSC string `json:"itsc"`
+	Name string `json:"name"`
+}
+
+type SubmissionGrade struct {
+	ID        int                        `json:"id"`
+	IsLate    bool                       `json:"isLate"`
+	CreatedAt repository.TimeWithoutZone `json:"created_at"`
+	Reports   []SubmissionReport         `json:"reports"`
+	User      SubmissionUser             `json:"user"`
+}
+
+type Assignment struct {
+	Name string `json:"name"`
+}
+
+type GradeAssignmentConfig struct {
+	DueAt       *repository.TimeWithoutZone `json:"dueAt"`
+	Assignment  Assignment                  `json:"assignment"`
+	Submissions []SubmissionGrade           `json:"submissions"`
+}
+
+type GradeResponse struct {
+	AssignmentConfig GradeAssignmentConfig `json:"assignmentConfig"`
+}
+
+// Submission download types
+type SubmissionDownload struct {
+	StoredName string                     `json:"stored_name"`
+	UploadName string                     `json:"upload_name"`
+	CreatedAt  repository.TimeWithoutZone `json:"created_at"`
+}
+
+type SubmissionDownloadResponse struct {
+	Submission SubmissionDownload `json:"submission"`
+}
+
+// Batch submission download types
+type BatchSubmissionUser struct {
+	ITSC string `json:"itsc"`
+}
+
+type BatchSubmission struct {
+	StoredName string              `json:"stored_name"`
+	UploadName string              `json:"upload_name"`
+	User       BatchSubmissionUser `json:"user"`
+}
+
+type Semester struct {
+	Year int    `json:"year"`
+	Term string `json:"term"`
+}
+
+type Course struct {
+	Code     string   `json:"code"`
+	Semester Semester `json:"semester"`
+}
+
+type AssignmentBatch struct {
+	Course Course `json:"course"`
+}
+
+type BatchAssignmentConfig struct {
+	Assignment  AssignmentBatch   `json:"assignment"`
+	Submissions []BatchSubmission `json:"submissions"`
+}
+
+type BatchSubmissionsResponse struct {
+	AssignmentConfig BatchAssignmentConfig `json:"assignmentConfig"`
+}

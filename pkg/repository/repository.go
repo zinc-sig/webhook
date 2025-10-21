@@ -41,6 +41,10 @@ type Repository interface {
 	GetLatestOrSelectedSubmissions(ctx context.Context, assignmentConfigID int, selectedSubmissionIDs []int) ([]Submission, error)
 	ExtractZip(submissionID int, storedName string) error
 	GetGradingPolicy(ctx context.Context, assignmentConfigID int, userID int) (bool, bool, error)
+	GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response interface{}) error
+	GetSubmissionByID(ctx context.Context, submissionID int, response interface{}) error
+	GetSubmissionFilePath(storedName string) string
+	GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response interface{}) error
 }
 
 type AuthTransport struct {

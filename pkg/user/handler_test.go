@@ -187,6 +187,26 @@ func (m *MockRepository) GetGradingPolicy(ctx context.Context, assignmentConfigI
 	return args.Bool(0), args.Bool(1), args.Error(2)
 }
 
+func (m *MockRepository) GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response interface{}) error {
+	args := m.Called(ctx, assignmentConfigID, response)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetSubmissionByID(ctx context.Context, submissionID int, response interface{}) error {
+	args := m.Called(ctx, submissionID, response)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetSubmissionFilePath(storedName string) string {
+	args := m.Called(storedName)
+	return args.String(0)
+}
+
+func (m *MockRepository) GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response interface{}) error {
+	args := m.Called(ctx, assignmentConfigID, response)
+	return args.Error(0)
+}
+
 func TestIdentity(t *testing.T) {
 	tests := []struct {
 		name           string

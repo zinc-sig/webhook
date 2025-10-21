@@ -53,7 +53,7 @@ func New(p RequestParams) (*testcontainers.GenericContainerRequest, error) {
 			Env: map[string]string{
 				"HASURA_GRAPHQL_VERSION":        "3",
 				"HASURA_GRAPHQL_ENABLE_CONSOLE": "true",
-				"HASURA_GRAPHQL_AUTH_HOOK":      fmt.Sprintf("http://host.docker.internal:%d/identity", api.Port),
+				"HASURA_GRAPHQL_AUTH_HOOK":      fmt.Sprintf("http://%s:%d/identity", testcontainers.HostInternal, api.Port),
 				"HASURA_GRAPHQL_AUTH_HOOK_MODE": "POST",
 			},
 		},

@@ -1,6 +1,7 @@
 package user
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -43,5 +44,26 @@ func Identity(s *service) echo.HandlerFunc {
 			XHasuraRequestedAt:    time.Now().Format(time.RFC3339),
 		}
 		return c.JSON(http.StatusOK, resp)
+	}
+}
+
+func NewSession(s *service) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		var req struct {
+			ExpiresAt time.Time       `json:"expires_at"`
+			TokenSet  json.RawMessage `json:"token_set"`
+			Name      string          `json:"name"`
+			Itsc      string          `json:"itsc"`
+		}
+		if err := c.Bind(&req); err != nil {
+			slog.Warn("failed to bind request", "error", err)
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "Invalid request body", Message: err.Error()})
+		}
+		sessionId, err := s.CreateSession(c.Request().Context(), req.TokenSet, req.ExpiresAt, req.Name, req.Itsc)
+		if err != nil {
+			slog.Warn("failed to create session", "error", err)
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "Failed to create session", Message: err.Error()})
+		}
+		return c.JSON(http.StatusOK, api.Response{Status: "ok", Data: map[string]string{"session_id": sessionId}})
 	}
 }

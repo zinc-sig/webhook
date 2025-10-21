@@ -22,6 +22,10 @@ mutation CreateUser($itsc: String!, $name: String!) {
       itsc: $itsc
       name: $name
     }
+    on_conflict: {
+      constraint: users_itsc_key
+      update_columns: [createdAt]
+    }
   ){ id }
 }
 `
@@ -178,6 +182,78 @@ query getLatestSubmissionsForAssignmentConfig($assignmentConfigId: bigint!) {
       id
       extracted_path
       created_at
+    }
+  }
+}`
+
+const getSubmissionGrades = `
+query getSubmissionsForAssignmentConfig($id: bigint!) {
+  assignmentConfig(id: $id) {
+    dueAt
+    assignment {
+      name
+    }
+    submissions(
+      distinct_on: [user_id]
+      order_by: [
+        { user_id: asc }
+        { created_at: desc }
+      ]
+    ) {
+      id
+      isLate
+      created_at
+      reports(
+        limit: 1
+        order_by: {
+          createdAt: desc
+        }
+      ) {
+        grade
+      }
+      user {
+        itsc
+        name
+      }
+    }
+  }
+}`
+
+const getSubmissionByID = `
+query getSubmission($id: bigint!) {
+  submission(
+    id: $id
+  ){
+    stored_name
+    upload_name
+    created_at
+  }
+}`
+
+const getAllSubmissionsForAssignmentConfig = `
+query getSubmissionsForAssignmentConfig($assignmentConfigId: bigint!) {
+  assignmentConfig(id: $assignmentConfigId) {
+    assignment {
+      course {
+        code
+        semester {
+          year
+          term
+        }
+      }
+    }
+    submissions(
+      distinct_on: [user_id]
+      order_by: [
+        { user_id: asc }
+        { created_at: desc }
+      ]
+    ) {
+      stored_name
+      upload_name
+      user {
+        itsc
+      }
     }
   }
 }`

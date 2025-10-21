@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -146,6 +147,10 @@ func ProvideMockRepository(t *testing.T) fx.Option {
 }
 
 func ProvideMockCacheService(t *testing.T) fx.Option {
+	bytes := make([]byte, 5)
+	if _, err := rand.Read(bytes); err != nil {
+		t.Fatalf("failed to generate random bytes: %v", err)
+	}
 	return fx.Options(
 		fx.NopLogger,
 		fx.Supply(
@@ -155,7 +160,7 @@ func ProvideMockCacheService(t *testing.T) fx.Option {
 			),
 		),
 		fx.Supply(fx.Annotate(
-			fmt.Sprintf("redis-test-%x", time.Now().Unix()),
+			fmt.Sprintf("redis-test-%x", hex.EncodeToString(bytes)),
 			fx.ResultTags(`name:"prefix"`),
 		)),
 		container.Module(),

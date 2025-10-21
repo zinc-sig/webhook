@@ -1,16 +1,22 @@
 package trigger
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/xuri/excelize/v2"
 	"github.com/zinc-sig/webhook/pkg/api"
 	"github.com/zinc-sig/webhook/pkg/cache"
 	"github.com/zinc-sig/webhook/pkg/repository"
@@ -19,6 +25,10 @@ import (
 
 const (
 	LoopbackAddress = "127.0.0.1"
+	// Resource limits for file generation
+	maxFileSize   = 100 * 1024 * 1024      // 100MB per file
+	maxTotalSize  = 2 * 1024 * 1024 * 1024 // 2GB total archive
+	maxFileErrors = 10                     // Maximum file errors before failing
 )
 
 type GradingPayload struct {
@@ -46,6 +56,55 @@ func NewService(p ServiceParams) *service {
 		repository: p.Repository,
 		config:     p.Config,
 	}
+}
+
+// sanitizeZipPath sanitizes ITSC and upload name to prevent path traversal attacks
+func sanitizeZipPath(itsc, uploadName string) (string, error) {
+	// Remove any path separators and parent directory references
+	cleanITSC := filepath.Base(filepath.Clean(itsc))
+	cleanUpload := filepath.Base(filepath.Clean(uploadName))
+
+	// Validate that cleaning didn't eliminate the entire path
+	if cleanITSC == "." || cleanITSC == ".." || cleanITSC == "" {
+		return "", fmt.Errorf("invalid ITSC: %s", itsc)
+	}
+	if cleanUpload == "." || cleanUpload == ".." || cleanUpload == "" {
+		return "", fmt.Errorf("invalid upload name: %s", uploadName)
+	}
+
+	return filepath.Join(cleanITSC, cleanUpload), nil
+}
+
+// formatLateDuration formats a duration into human-readable format
+func formatLateDuration(duration time.Duration) string {
+	if duration < 0 {
+		return "Not late"
+	}
+
+	hours := int(duration.Hours())
+	if hours >= 24 {
+		days := hours / 24
+		remainingHours := hours % 24
+		if remainingHours > 0 {
+			return fmt.Sprintf("%dd %dh", days, remainingHours)
+		}
+		return fmt.Sprintf("%dd", days)
+	}
+
+	if hours > 0 {
+		minutes := int(duration.Minutes()) % 60
+		if minutes > 0 {
+			return fmt.Sprintf("%dh %dm", hours, minutes)
+		}
+		return fmt.Sprintf("%dh", hours)
+	}
+
+	minutes := int(duration.Minutes())
+	if minutes > 0 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+
+	return "< 1m"
 }
 
 // buildGradingJobPayload builds and marshals a grading job payload
@@ -93,6 +152,9 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 	e.POST("/trigger/manualGradingTask/:assignmentConfigId", ManualGradingTask(s))
 	e.POST("/trigger/gradingTask", GradingTask(s))
 	e.PUT("/grader/queues", UpdateGraderQueues(s))
+	e.GET("/download/grades", DownloadGrades(s))
+	e.GET("/download/submissions", DownloadSubmissions(s))
+	e.GET("/download/submissions/:id", DownloadSubmission(s))
 }
 
 func (s *service) SyncEnrollment(ctx context.Context) error {
@@ -482,12 +544,12 @@ func (s *service) ScheduleGrading(ctx context.Context, event *RowTriggerEvent) e
 	if (event.Op == "UPDATE" && oldGrading.StopCollectionAt != newGrading.StopCollectionAt) || event.Op == "INSERT" {
 		webhookURL := fmt.Sprintf("http://%s:%d/trigger/gradingTask", LoopbackAddress, api.Port)
 
-		payload := map[string]interface{}{
+		payload := map[string]any{
 			"type": "create_scheduled_event",
-			"args": map[string]interface{}{
+			"args": map[string]any{
 				"webhook":     webhookURL,
 				"schedule_at": newGrading.StopCollectionAt,
-				"payload": map[string]interface{}{
+				"payload": map[string]any{
 					"assignment_config_id": newGrading.ID,
 					"stop_collection_at":   newGrading.StopCollectionAt,
 				},
@@ -529,4 +591,372 @@ func (s *service) UpdateGraderQueues(ctx context.Context, queues []string) error
 	}
 	slog.Info("updated grader queues", "queues", queues, "count", len(queues))
 	return nil
+}
+
+func (s *service) GetSubmissionGrades(ctx context.Context, assignmentConfigID int) (*GradeResponse, error) {
+	var resp GradeResponse
+	if err := s.repository.GetSubmissionGrades(ctx, assignmentConfigID, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (s *service) GetSubmissionForDownload(ctx context.Context, submissionID int) (*SubmissionDownloadResponse, error) {
+	var resp SubmissionDownloadResponse
+	if err := s.repository.GetSubmissionByID(ctx, submissionID, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (s *service) GenerateSubmissionsZip(ctx context.Context, assignmentConfigID int) (*bytes.Buffer, string, error) {
+	// Fetch all submissions data
+	var submissionsData BatchSubmissionsResponse
+	if err := s.repository.GetAllSubmissionsForAssignmentConfig(ctx, assignmentConfigID, &submissionsData); err != nil {
+		return nil, "", err
+	}
+
+	// Validate we have submissions
+	if len(submissionsData.AssignmentConfig.Submissions) == 0 {
+		return nil, "", fmt.Errorf("no submissions found for assignment config %d", assignmentConfigID)
+	}
+
+	// Create a buffer to write the zip archive to
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+
+	// Track statistics
+	var totalSize int64
+	filesProcessed := 0
+	filesSkipped := 0
+	errorCount := 0
+
+	// Add each submission to the zip
+	for _, submission := range submissionsData.AssignmentConfig.Submissions {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			zipWriter.Close()
+			return nil, "", ctx.Err()
+		default:
+		}
+
+		filePath := s.repository.GetSubmissionFilePath(submission.StoredName)
+
+		// Get file info before reading
+		fileInfo, err := os.Stat(filePath)
+		if os.IsNotExist(err) {
+			slog.Warn("Submission file not found, skipping",
+				"storedName", submission.StoredName,
+				"filePath", filePath)
+			filesSkipped++
+			errorCount++
+			continue
+		}
+		if err != nil {
+			slog.Warn("Failed to stat submission file",
+				"storedName", submission.StoredName,
+				"error", err)
+			filesSkipped++
+			errorCount++
+			if errorCount > maxFileErrors {
+				zipWriter.Close()
+				return nil, "", fmt.Errorf("too many file errors (%d), aborting", errorCount)
+			}
+			continue
+		}
+
+		// Check file size limits
+		if fileInfo.Size() > maxFileSize {
+			slog.Warn("Submission file too large, skipping",
+				"storedName", submission.StoredName,
+				"size", fileInfo.Size(),
+				"maxSize", maxFileSize)
+			filesSkipped++
+			errorCount++
+			if errorCount > maxFileErrors {
+				zipWriter.Close()
+				return nil, "", fmt.Errorf("too many file errors (%d), aborting", errorCount)
+			}
+			continue
+		}
+
+		if totalSize+fileInfo.Size() > maxTotalSize {
+			zipWriter.Close()
+			slog.Error("Total archive size would exceed limit",
+				"currentSize", totalSize,
+				"maxSize", maxTotalSize,
+				"filesProcessed", filesProcessed)
+			return nil, "", fmt.Errorf("archive size limit exceeded: %d files processed", filesProcessed)
+		}
+
+		// Sanitize zip path
+		zipPath, err := sanitizeZipPath(submission.User.ITSC, submission.UploadName)
+		if err != nil {
+			slog.Warn("Invalid path in submission, skipping",
+				"storedName", submission.StoredName,
+				"itsc", submission.User.ITSC,
+				"uploadName", submission.UploadName,
+				"error", err)
+			filesSkipped++
+			errorCount++
+			if errorCount > maxFileErrors {
+				zipWriter.Close()
+				return nil, "", fmt.Errorf("too many file errors (%d), aborting", errorCount)
+			}
+			continue
+		}
+
+		// Create zip entry
+		writer, err := zipWriter.Create(zipPath)
+		if err != nil {
+			zipWriter.Close()
+			return nil, "", fmt.Errorf("failed to create zip entry for %s: %w",
+				submission.StoredName, err)
+		}
+
+		// Stream file directly to zip without loading into memory
+		file, err := os.Open(filePath)
+		if err != nil {
+			slog.Warn("Failed to open submission file",
+				"storedName", submission.StoredName,
+				"error", err)
+			filesSkipped++
+			errorCount++
+			if errorCount > maxFileErrors {
+				zipWriter.Close()
+				return nil, "", fmt.Errorf("too many file errors (%d), aborting", errorCount)
+			}
+			continue
+		}
+
+		written, err := io.Copy(writer, file)
+		file.Close()
+
+		if err != nil {
+			zipWriter.Close()
+			return nil, "", fmt.Errorf("failed to write %s to zip: %w",
+				submission.StoredName, err)
+		}
+
+		totalSize += written
+		filesProcessed++
+	}
+
+	// Validate we processed at least some files
+	if filesProcessed == 0 {
+		zipWriter.Close()
+		return nil, "", fmt.Errorf("no submission files could be added to archive (all %d submissions failed)",
+			len(submissionsData.AssignmentConfig.Submissions))
+	}
+
+	// Close the zip writer to finalize the archive
+	if err := zipWriter.Close(); err != nil {
+		return nil, "", fmt.Errorf("failed to close zip writer: %w", err)
+	}
+
+	// Generate filename: {code}_{year}-{term}_submissions_latest.zip
+	course := submissionsData.AssignmentConfig.Assignment.Course
+	filename := fmt.Sprintf("%s_%d-%s_submissions_latest.zip",
+		strings.ToLower(course.Code),
+		course.Semester.Year,
+		strings.ToLower(course.Semester.Term))
+
+	slog.Info("Generated submissions zip",
+		"assignmentConfigID", assignmentConfigID,
+		"filesProcessed", filesProcessed,
+		"filesSkipped", filesSkipped,
+		"totalSize", totalSize,
+		"filename", filename)
+
+	return buf, filename, nil
+}
+
+func (s *service) GenerateGradesExcel(ctx context.Context, assignmentConfigID int, viewingTaskAssignedGroups string) (*excelize.File, error) {
+	// Fetch grades data
+	gradesData, err := s.GetSubmissionGrades(ctx, assignmentConfigID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate we have submissions
+	if len(gradesData.AssignmentConfig.Submissions) == 0 {
+		return nil, fmt.Errorf("no submissions found for assignment config %d", assignmentConfigID)
+	}
+
+	// PASS 1: Discover all subgrade columns across ALL submissions
+	subgradeColumns := make(map[string]string) // hash -> displayName
+	var subgradeOrder []string
+
+	for _, submission := range gradesData.AssignmentConfig.Submissions {
+		if len(submission.Reports) > 0 && submission.Reports[0].Grade != nil {
+			grade := submission.Reports[0].Grade
+			if grade.Details != nil {
+				for _, subReport := range grade.Details.Reports {
+					if _, exists := subgradeColumns[subReport.Hash]; !exists {
+						subgradeColumns[subReport.Hash] = subReport.DisplayName
+						subgradeOrder = append(subgradeOrder, subReport.Hash)
+					}
+				}
+			}
+		}
+	}
+
+	// Create a new Excel file
+	f := excelize.NewFile()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("Failed to close Excel file", "error", err)
+		}
+	}()
+
+	// Set workbook properties
+	if err := f.SetDocProps(&excelize.DocProperties{
+		Creator: "Zinc by HKUST CSE Department",
+		Created: time.Now().Format(time.RFC3339),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to set document properties: %w", err)
+	}
+
+	// Create sheet name
+	sheetName := "grades"
+	if viewingTaskAssignedGroups != "" {
+		sheetName = fmt.Sprintf("grades %s", viewingTaskAssignedGroups)
+	}
+
+	// Rename default sheet
+	defaultSheet := f.GetSheetName(0)
+	if err := f.SetSheetName(defaultSheet, sheetName); err != nil {
+		return nil, fmt.Errorf("failed to rename sheet: %w", err)
+	}
+
+	// Define ALL columns upfront
+	defaultColumns := []string{"ITSC", "Name", "Score", "Late Submission"}
+	allColumns := make([]string, 0, len(defaultColumns)+len(subgradeOrder))
+	allColumns = append(allColumns, defaultColumns...)
+	for _, hash := range subgradeOrder {
+		allColumns = append(allColumns, subgradeColumns[hash])
+	}
+
+	// Write ALL headers in one pass
+	for i, col := range allColumns {
+		cell, err := excelize.CoordinatesToCellName(i+1, 1)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert coordinates to cell name: %w", err)
+		}
+		if err := f.SetCellValue(sheetName, cell, col); err != nil {
+			return nil, fmt.Errorf("failed to set header cell %s: %w", cell, err)
+		}
+	}
+
+	// Set column widths for all columns
+	columnWidths := map[int]float64{
+		1: 16, // ITSC
+		2: 32, // Name
+		3: 16, // Score
+		4: 16, // Late Submission
+	}
+	// All subgrade columns get width 16
+	for i := len(defaultColumns); i < len(allColumns); i++ {
+		columnWidths[i+1] = 16
+	}
+
+	for colIdx, width := range columnWidths {
+		colName, err := excelize.ColumnNumberToName(colIdx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert column number to name: %w", err)
+		}
+		if err := f.SetColWidth(sheetName, colName, colName, width); err != nil {
+			return nil, fmt.Errorf("failed to set column width for %s: %w", colName, err)
+		}
+	}
+
+	// PASS 2: Write data rows
+	rowIdx := 2
+	for _, submission := range gradesData.AssignmentConfig.Submissions {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		itsc := submission.User.ITSC
+		name := submission.User.Name
+
+		// Calculate late submission time with proper formatting
+		var lateStr string
+		if submission.IsLate && gradesData.AssignmentConfig.DueAt != nil {
+			dueDate := gradesData.AssignmentConfig.DueAt.Time()
+			submittedDate := submission.CreatedAt.Time()
+			lateDuration := submittedDate.Sub(dueDate)
+			lateStr = formatLateDuration(lateDuration)
+		} else {
+			lateStr = ""
+		}
+
+		// Build subgrade score map for this submission
+		submissionSubgrades := make(map[string]float64)
+		var scoreValue interface{} = "N/A"
+
+		if len(submission.Reports) > 0 && submission.Reports[0].Grade != nil {
+			grade := submission.Reports[0].Grade
+
+			if grade.Details != nil {
+				// Has detailed grades - use actual number
+				scoreValue = grade.Details.AccScore
+
+				// Collect subgrade scores
+				for _, subReport := range grade.Details.Reports {
+					submissionSubgrades[subReport.Hash] = subReport.Score
+				}
+			} else if grade.Score != nil {
+				// Simple score without details - use actual number
+				scoreValue = *grade.Score
+			}
+		}
+
+		// Write default columns
+		if err := f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowIdx), itsc); err != nil {
+			return nil, fmt.Errorf("failed to set ITSC cell for row %d: %w", rowIdx, err)
+		}
+		if err := f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowIdx), name); err != nil {
+			return nil, fmt.Errorf("failed to set name cell for row %d: %w", rowIdx, err)
+		}
+		if err := f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowIdx), scoreValue); err != nil {
+			return nil, fmt.Errorf("failed to set score cell for row %d: %w", rowIdx, err)
+		}
+		if err := f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowIdx), lateStr); err != nil {
+			return nil, fmt.Errorf("failed to set late cell for row %d: %w", rowIdx, err)
+		}
+
+		// Write subgrade columns in consistent order
+		for i, hash := range subgradeOrder {
+			colIdx := len(defaultColumns) + i + 1
+			cell, err := excelize.CoordinatesToCellName(colIdx, rowIdx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert coordinates to cell name: %w", err)
+			}
+			if score, exists := submissionSubgrades[hash]; exists {
+				if err := f.SetCellValue(sheetName, cell, score); err != nil {
+					return nil, fmt.Errorf("failed to set subgrade score cell %s: %w", cell, err)
+				}
+			} else {
+				// Write empty string for missing subgrades
+				if err := f.SetCellValue(sheetName, cell, ""); err != nil {
+					return nil, fmt.Errorf("failed to set empty subgrade cell %s: %w", cell, err)
+				}
+			}
+		}
+
+		rowIdx++
+	}
+
+	slog.Info("Generated grades Excel file",
+		"assignmentConfigID", assignmentConfigID,
+		"submissionCount", len(gradesData.AssignmentConfig.Submissions),
+		"totalColumns", len(allColumns),
+		"subgradeColumns", len(subgradeOrder))
+
+	return f, nil
 }

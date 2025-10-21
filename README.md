@@ -138,4 +138,4 @@ Check version with:
 
 ## License
 
-[Add your license information here]
+[Mozilla Public License v2.0](https://github.com/zinc-sig/webhook/blob/main/LICENSE)
