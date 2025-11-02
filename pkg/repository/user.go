@@ -40,7 +40,7 @@ func (r *repository) GetUser(ctx context.Context, itsc, name string) (*User, err
 	var createResp struct {
 		InsertUsersOne struct {
 			ID int `json:"id"`
-		} `json:"insert_users_one"`
+		} `json:"createUser"`
 	}
 
 	if err := r.client.Run(ctx, req, &createResp); err != nil {

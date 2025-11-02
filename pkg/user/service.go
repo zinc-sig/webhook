@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -63,14 +64,14 @@ func getCookie(cookieHeader, cookieName string) (string, error) {
 	return cookie.Value, nil
 }
 
-func (s *service) CreateSession(ctx context.Context, tokenSet []byte, expiresAt time.Time, name, itsc string) (string, error) {
+func (s *service) CreateSession(ctx context.Context, tokenSet []byte, expiresAt time.Time, name, itsc string) (string, string, error) {
 	sessionIdBytes, err := auth.RandomBytes(16)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate session ID: %w", err)
+		return "", "", fmt.Errorf("failed to generate session ID: %w", err)
 	}
-	_, err = s.repository.GetUser(ctx, itsc, name)
+	user, err := s.repository.GetUser(ctx, itsc, name)
 	if err != nil {
-		return "", fmt.Errorf("failed to get or create user: %w", err)
+		return "", "", fmt.Errorf("failed to get or create user: %w", err)
 	}
 	sessionId := hex.EncodeToString(sessionIdBytes)
 	hmac := hmac.New(sha1.New, []byte(s.sessionSecret))
@@ -78,9 +79,9 @@ func (s *service) CreateSession(ctx context.Context, tokenSet []byte, expiresAt 
 	key := base64.StdEncoding.EncodeToString(hmac.Sum(nil))
 	err = s.cache.Put(ctx, key, tokenSet, time.Until(expiresAt))
 	if err != nil {
-		return "", fmt.Errorf("failed to store session in cache: %w", err)
+		return "", "", fmt.Errorf("failed to store session in cache: %w", err)
 	}
-	return sessionId, nil
+	return sessionId, strconv.Itoa(user.ID), nil
 }
 
 func (s *service) ValidateSession(ctx context.Context, cookieString string) (*repository.User, error) {
