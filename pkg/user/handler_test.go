@@ -67,6 +67,11 @@ func (m *MockCache) Subscribe(ctx context.Context) error {
 	return args.Error(0)
 }
 
+func (m *MockCache) ValidateConfig(ctx context.Context, configYAML string) (*cache.ConfigValidationResponse, error) {
+	args := m.Called(ctx, configYAML)
+	return args.Get(0).(*cache.ConfigValidationResponse), args.Error(0)
+}
+
 func (m *MockCache) RegisterHandler(jobType string, handler cache.MessageHandler) {
 	m.Called(jobType, handler)
 }
