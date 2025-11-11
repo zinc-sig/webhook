@@ -51,7 +51,10 @@ func New(options Options) *fx.App {
 		panic(fmt.Errorf("failed to unmarshal config: %v", err))
 	}
 	m := []fx.Option{
-		fx.Supply(cfg),
+		fx.Supply(
+			cfg,
+			fx.Annotated{Name: "debug", Target: options.Debug},
+		),
 		auth.Module,
 		repository.Module,
 		cache.Module,

@@ -151,6 +151,7 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 	e.POST("/trigger/scheduleGrading", ScheduleGrading(s))
 	e.POST("/trigger/manualGradingTask/:assignmentConfigId", ManualGradingTask(s))
 	e.POST("/trigger/gradingTask", GradingTask(s))
+	e.POST("/validate/config", ValidateConfig(s))
 	e.PUT("/grader/queues", UpdateGraderQueues(s))
 	e.GET("/download/grades", DownloadGrades(s))
 	e.GET("/download/submissions", DownloadSubmissions(s))

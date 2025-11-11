@@ -34,8 +34,8 @@ type ConfigValidationRequest struct {
 }
 
 type ConfigValidationResponse struct {
-	ID          string `json:"id"`
-	ConfigError string `json:"configError"`
+	ID          string  `json:"id"`
+	ConfigError *string `json:"configError"`
 }
 
 func (s *service) processMessage(ctx context.Context, queue, rawMessage string) {
@@ -75,6 +75,7 @@ type Service interface {
 
 type service struct {
 	client   *redis.Client
+	debug    bool
 	locker   sync.Mutex
 	handlers map[string]MessageHandler
 }
@@ -82,6 +83,7 @@ type service struct {
 type ServiceParams struct {
 	fx.In
 	Config *Config
+	Debug  bool `name:"debug"`
 }
 
 func NewService(p ServiceParams) Service {
@@ -92,6 +94,7 @@ func NewService(p ServiceParams) Service {
 	})
 	return &service{
 		client:   client,
+		debug:    p.Debug,
 		handlers: make(map[string]MessageHandler),
 	}
 }
@@ -275,6 +278,15 @@ func (s *service) ValidateConfig(ctx context.Context, configYAML string) (*Confi
 	if err != nil {
 		slog.Warn("Failed to marshal validation request", "error", err)
 		return nil, fmt.Errorf("failed to marshal validation request: %w", err)
+	}
+
+	// For debug mode, skip actual publishing and return a mock response
+	if s.debug {
+		slog.Info("Publishing config validation request", "request", validationReq)
+		return &ConfigValidationResponse{
+			ID:          id.String(),
+			ConfigError: nil,
+		}, nil
 	}
 
 	// Publish the validation request to the validateConfig channel
