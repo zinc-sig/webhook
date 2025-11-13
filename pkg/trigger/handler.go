@@ -180,6 +180,28 @@ func DownloadSubmissions(s *service) echo.HandlerFunc {
 	}
 }
 
+func StoreSubmission(s *service) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		assignmentConfigID, err := strconv.Atoi(c.FormValue("assignmentConfigId"))
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid assignmentConfigId", Message: err.Error()})
+		}
+		userID, err := strconv.Atoi(c.FormValue("userId"))
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid userId", Message: err.Error()})
+		}
+		submittedFile, err := c.FormFile("files")
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid file", Message: err.Error()})
+		}
+		err = s.StoreSubmission(c.Request().Context(), userID, assignmentConfigID, submittedFile)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to store submission", Message: err.Error()})
+		}
+		return nil
+	}
+}
+
 func DownloadSubmission(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// Get submission ID from path parameter

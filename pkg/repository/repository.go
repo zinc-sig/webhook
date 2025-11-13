@@ -36,15 +36,16 @@ type Repository interface {
 	GetStudentUserIds(ctx context.Context, itscIDs []string) ([]int, error)
 	CreateSemesterIfNotExist(ctx context.Context, id int) error
 	GetStudentCourseEnrollmentMap(courseCode string) (*EnrollmentMap, error)
-	UpdateReportEntry(ctx context.Context, report map[string]interface{}) error
+	UpdateReportEntry(ctx context.Context, report map[string]any) error
 	GetGradingSubmissions(ctx context.Context, assignmentConfigID int) (*Assignment, error)
 	GetLatestOrSelectedSubmissions(ctx context.Context, assignmentConfigID int, selectedSubmissionIDs []int) ([]Submission, error)
 	ExtractZip(submissionID int, storedName string) error
+	CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string) (int, error)
 	GetGradingPolicy(ctx context.Context, assignmentConfigID int, userID int) (bool, bool, error)
-	GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response interface{}) error
-	GetSubmissionByID(ctx context.Context, submissionID int, response interface{}) error
+	GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response any) error
+	GetSubmissionByID(ctx context.Context, submissionID int, response any) error
 	GetSubmissionFilePath(storedName string) string
-	GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response interface{}) error
+	GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response any) error
 }
 
 type AuthTransport struct {

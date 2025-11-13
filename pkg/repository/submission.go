@@ -37,6 +37,24 @@ type Submission struct {
 	CreatedAt     TimeWithoutZone `json:"created_at"`
 }
 
+func (r *repository) CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string) (int, error) {
+	req := graphql.NewRequest(createSubmission)
+	req.Var("submission", map[string]any{
+		"stored_name":          storedName,
+		"upload_name":          uploadName,
+		"assignment_config_id": assignmentConfigID,
+		"size":                 fileSize,
+		"checksum":             checksum,
+		"user_id":              userID,
+	})
+
+	var resp struct {
+		ID int `json:"id"`
+	}
+
+	return resp.ID, r.client.Run(ctx, req, &resp)
+}
+
 func (r *repository) UpdateExtractedSubmissionEntry(ctx context.Context, id int, extractedPath, failReason string) error {
 	req := graphql.NewRequest(updateDecompressionResultForSubmission)
 	req.Var("id", id)
@@ -94,12 +112,12 @@ func (r *repository) GetGradingSubmissions(ctx context.Context, assignmentConfig
 
 func (r *repository) GetLatestOrSelectedSubmissions(ctx context.Context, assignmentConfigID int, selectedSubmissionIDs []int) ([]Submission, error) {
 	query := getSelectedSubmissions
-	variables := map[string]interface{}{
+	variables := map[string]any{
 		"submissions": selectedSubmissionIDs,
 	}
 	if len(selectedSubmissionIDs) == 0 {
 		query = getLatestSubmissionsForAssignmentConfig
-		variables = map[string]interface{}{
+		variables = map[string]any{
 			"assignmentConfigId": assignmentConfigID,
 		}
 	}
@@ -253,7 +271,7 @@ func moveDirectory(src, dest string) error {
 	return os.RemoveAll(src)
 }
 
-func (r *repository) GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response interface{}) error {
+func (r *repository) GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response any) error {
 	req := graphql.NewRequest(getSubmissionGrades)
 	req.Var("id", assignmentConfigID)
 
@@ -265,7 +283,7 @@ func (r *repository) GetSubmissionGrades(ctx context.Context, assignmentConfigID
 	return nil
 }
 
-func (r *repository) GetSubmissionByID(ctx context.Context, submissionID int, response interface{}) error {
+func (r *repository) GetSubmissionByID(ctx context.Context, submissionID int, response any) error {
 	req := graphql.NewRequest(getSubmissionByID)
 	req.Var("id", submissionID)
 
@@ -281,7 +299,7 @@ func (r *repository) GetSubmissionFilePath(storedName string) string {
 	return fmt.Sprintf("%s/%s", r.sharedMountPath, storedName)
 }
 
-func (r *repository) GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response interface{}) error {
+func (r *repository) GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response any) error {
 	req := graphql.NewRequest(getAllSubmissionsForAssignmentConfig)
 	req.Var("assignmentConfigId", assignmentConfigID)
 
