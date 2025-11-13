@@ -44,7 +44,7 @@ func (v *verifier) VerifyToken(ctx context.Context, tokenString string) (*jwt.To
 		return nil, fmt.Errorf("failed to fetch JWK: %w", err)
 	}
 
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		kid, ok := token.Header["kid"].(string)
 		if !ok {
 			slog.Warn("kid header not found in token")
@@ -57,7 +57,7 @@ func (v *verifier) VerifyToken(ctx context.Context, tokenString string) (*jwt.To
 			return nil, errors.New("key not found")
 		}
 
-		var publicKey interface{}
+		var publicKey any
 		if err := keys.Raw(&publicKey); err != nil {
 			slog.Warn("Failed to get raw key", "error", err)
 			return nil, fmt.Errorf("failed to get raw key: %w", err)
