@@ -965,7 +965,7 @@ func (s *service) GenerateGradesExcel(ctx context.Context, assignmentConfigID in
 	return f, nil
 }
 
-func (s *service) StoreSubmission(ctx context.Context, userID, assignmentConfigID int, file *multipart.FileHeader) error {
+func (s *service) StoreSubmission(ctx context.Context, userID, assignmentConfigID int, file *multipart.FileHeader, cookie *http.Cookie) error {
 	src, err := file.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -984,7 +984,7 @@ func (s *service) StoreSubmission(ctx context.Context, userID, assignmentConfigI
 	if _, err := io.Copy(h, src); err != nil {
 		return fmt.Errorf("failed to hash file: %w", err)
 	}
-	submissionID, err := s.repository.CreateSubmission(ctx, userID, assignmentConfigID, storedName, file.Filename, file.Size, fmt.Sprintf("%x", h.Sum(nil)))
+	submissionID, err := s.repository.CreateSubmission(ctx, userID, assignmentConfigID, storedName, file.Filename, file.Size, fmt.Sprintf("%x", h.Sum(nil)), cookie)
 	if err != nil {
 		return fmt.Errorf("failed to create submission: %w", err)
 	}

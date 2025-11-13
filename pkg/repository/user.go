@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"slices"
 
 	"github.com/machinebox/graphql"
 )
@@ -17,7 +18,7 @@ type User struct {
 }
 
 func (r *repository) GetUser(ctx context.Context, itsc, name string) (*User, error) {
-	req := graphql.NewRequest(GetUserByITSC)
+	req := r.WithAdminSecret(graphql.NewRequest(GetUserByITSC))
 	req.Var("itsc", itsc)
 
 	var resp struct {
@@ -33,7 +34,7 @@ func (r *repository) GetUser(ctx context.Context, itsc, name string) (*User, err
 	}
 
 	// Create user if not found
-	req = graphql.NewRequest(CreateUser)
+	req = r.WithAdminSecret(graphql.NewRequest(CreateUser))
 	req.Var("itsc", itsc)
 	req.Var("name", name)
 
@@ -51,7 +52,7 @@ func (r *repository) GetUser(ctx context.Context, itsc, name string) (*User, err
 }
 
 func (r *repository) GetStudentUserIds(ctx context.Context, itscIDs []string) ([]int, error) {
-	req := graphql.NewRequest(getStudentUserIds)
+	req := r.WithAdminSecret(graphql.NewRequest(getStudentUserIds))
 	req.Var("itscIds", itscIDs)
 
 	var resp struct {
@@ -74,25 +75,19 @@ func (r *repository) GetStudentUserIds(ctx context.Context, itscIDs []string) ([
 
 	var newITSCs []string
 	for _, itscID := range itscIDs {
-		found := false
-		for _, existingITSC := range existingITSCs {
-			if itscID == existingITSC {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(existingITSCs, itscID)
 		if !found {
 			newITSCs = append(newITSCs, itscID)
 		}
 	}
 
 	if len(newITSCs) > 0 {
-		var users []map[string]interface{}
+		var users []map[string]any
 		for _, itsc := range newITSCs {
-			users = append(users, map[string]interface{}{"itsc": itsc})
+			users = append(users, map[string]any{"itsc": itsc})
 		}
 
-		req := graphql.NewRequest(addUsers)
+		req := r.WithAdminSecret(graphql.NewRequest(addUsers))
 		req.Var("users", users)
 
 		var addResp struct {

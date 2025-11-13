@@ -7,7 +7,7 @@ import (
 )
 
 func (r *repository) UpdateReportEntry(ctx context.Context, report map[string]interface{}) error {
-	req := graphql.NewRequest(addReportArtifacts)
+	req := r.WithAdminSecret(graphql.NewRequest(addReportArtifacts))
 	for k, v := range report {
 		req.Var(k, v)
 	}

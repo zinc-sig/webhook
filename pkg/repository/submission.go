@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,8 +38,8 @@ type Submission struct {
 	CreatedAt     TimeWithoutZone `json:"created_at"`
 }
 
-func (r *repository) CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string) (int, error) {
-	req := graphql.NewRequest(createSubmission)
+func (r *repository) CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string, cookie *http.Cookie) (int, error) {
+	req := r.WithCookie(graphql.NewRequest(createSubmission), cookie)
 	req.Var("submission", map[string]any{
 		"stored_name":          storedName,
 		"upload_name":          uploadName,
@@ -56,7 +57,7 @@ func (r *repository) CreateSubmission(ctx context.Context, userID int, assignmen
 }
 
 func (r *repository) UpdateExtractedSubmissionEntry(ctx context.Context, id int, extractedPath, failReason string) error {
-	req := graphql.NewRequest(updateDecompressionResultForSubmission)
+	req := r.WithAdminSecret(graphql.NewRequest(updateDecompressionResultForSubmission))
 	req.Var("id", id)
 	if extractedPath != "" {
 		req.Var("extractedPath", extractedPath)
@@ -74,7 +75,7 @@ func (r *repository) UpdateExtractedSubmissionEntry(ctx context.Context, id int,
 }
 
 func (r *repository) GetGradingPolicy(ctx context.Context, assignmentConfigID int, userID int) (bool, bool, error) {
-	req := graphql.NewRequest(getGradingPolicy)
+	req := r.WithAdminSecret(graphql.NewRequest(getGradingPolicy))
 	req.Var("id", assignmentConfigID)
 	req.Var("userId", userID)
 
@@ -99,7 +100,7 @@ func (r *repository) GetGradingPolicy(ctx context.Context, assignmentConfigID in
 }
 
 func (r *repository) GetGradingSubmissions(ctx context.Context, assignmentConfigID int) (*Assignment, error) {
-	graphqlReq := graphql.NewRequest(getGradingSubmissions)
+	graphqlReq := r.WithAdminSecret(graphql.NewRequest(getGradingSubmissions))
 	graphqlReq.Var("assignmentConfigId", assignmentConfigID)
 
 	var graphqlResp Assignment
@@ -122,7 +123,7 @@ func (r *repository) GetLatestOrSelectedSubmissions(ctx context.Context, assignm
 		}
 	}
 
-	graphqlReq := graphql.NewRequest(query)
+	graphqlReq := r.WithAdminSecret(graphql.NewRequest(query))
 	for key, value := range variables {
 		graphqlReq.Var(key, value)
 	}
@@ -272,7 +273,7 @@ func moveDirectory(src, dest string) error {
 }
 
 func (r *repository) GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response any) error {
-	req := graphql.NewRequest(getSubmissionGrades)
+	req := r.WithAdminSecret(graphql.NewRequest(getSubmissionGrades))
 	req.Var("id", assignmentConfigID)
 
 	if err := r.client.Run(ctx, req, response); err != nil {
@@ -284,7 +285,7 @@ func (r *repository) GetSubmissionGrades(ctx context.Context, assignmentConfigID
 }
 
 func (r *repository) GetSubmissionByID(ctx context.Context, submissionID int, response any) error {
-	req := graphql.NewRequest(getSubmissionByID)
+	req := r.WithAdminSecret(graphql.NewRequest(getSubmissionByID))
 	req.Var("id", submissionID)
 
 	if err := r.client.Run(ctx, req, response); err != nil {
@@ -300,7 +301,7 @@ func (r *repository) GetSubmissionFilePath(storedName string) string {
 }
 
 func (r *repository) GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response any) error {
-	req := graphql.NewRequest(getAllSubmissionsForAssignmentConfig)
+	req := r.WithAdminSecret(graphql.NewRequest(getAllSubmissionsForAssignmentConfig))
 	req.Var("assignmentConfigId", assignmentConfigID)
 
 	if err := r.client.Run(ctx, req, response); err != nil {

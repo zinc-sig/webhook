@@ -94,8 +94,8 @@ type MockRepository struct {
 	mock.Mock
 }
 
-func (m *MockRepository) CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string) (int, error) {
-	args := m.Called(ctx, userID, assignmentConfigID, storedName, uploadName, fileSize, checksum)
+func (m *MockRepository) CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string, cookie *http.Cookie) (int, error) {
+	args := m.Called(ctx, userID, assignmentConfigID, storedName, uploadName, fileSize, checksum, cookie)
 	return args.Int(0), args.Error(1)
 }
 

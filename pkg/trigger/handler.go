@@ -182,6 +182,10 @@ func DownloadSubmissions(s *service) echo.HandlerFunc {
 
 func StoreSubmission(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		session, err := c.Request().Cookie("appSession")
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid session", Message: err.Error()})
+		}
 		assignmentConfigID, err := strconv.Atoi(c.FormValue("assignmentConfigId"))
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid assignmentConfigId", Message: err.Error()})
@@ -194,7 +198,7 @@ func StoreSubmission(s *service) echo.HandlerFunc {
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid file", Message: err.Error()})
 		}
-		err = s.StoreSubmission(c.Request().Context(), userID, assignmentConfigID, submittedFile)
+		err = s.StoreSubmission(c.Request().Context(), userID, assignmentConfigID, submittedFile, session)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to store submission", Message: err.Error()})
 		}
