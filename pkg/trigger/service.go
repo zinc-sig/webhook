@@ -4,10 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,7 +113,7 @@ func formatLateDuration(duration time.Duration) string {
 // It returns the marshaled job payload as []byte ready for publishing to Redis
 func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []GradingPayload, assignmentConfigID int, isTest bool, initiatedBy *int) ([]byte, error) {
 	// Build the payload map
-	payloadMap := map[string]interface{}{
+	payloadMap := map[string]any{
 		"submissions":          gradingPayloads,
 		"assignment_config_id": assignmentConfigID,
 		"isTest":               isTest,
@@ -132,7 +134,7 @@ func (s *service) buildGradingJobPayload(jobType string, gradingPayloads []Gradi
 	}
 
 	// Create the job wrapper
-	job, err := json.Marshal(map[string]interface{}{
+	job, err := json.Marshal(map[string]any{
 		"job":     jobType,
 		"payload": string(payload),
 	})
@@ -151,10 +153,12 @@ func (s *service) RegisterRoutes(e *echo.Echo) {
 	e.POST("/trigger/scheduleGrading", ScheduleGrading(s))
 	e.POST("/trigger/manualGradingTask/:assignmentConfigId", ManualGradingTask(s))
 	e.POST("/trigger/gradingTask", GradingTask(s))
+	e.POST("/validate/config", ValidateConfig(s))
 	e.PUT("/grader/queues", UpdateGraderQueues(s))
 	e.GET("/download/grades", DownloadGrades(s))
 	e.GET("/download/submissions", DownloadSubmissions(s))
 	e.GET("/download/submissions/:id", DownloadSubmission(s))
+	e.POST("/submissions", StoreSubmission(s))
 }
 
 func (s *service) SyncEnrollment(ctx context.Context) error {
@@ -397,8 +401,8 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 		return fmt.Errorf("failed to unmarshal report data: %s", err.Error())
 	}
 
-	censoredReports := make(map[string]interface{})
-	var grade map[string]interface{}
+	censoredReports := make(map[string]any)
+	var grade map[string]any
 
 	for stage, stageReport := range report.PipelineResults.StageReports {
 		switch stage {
@@ -424,7 +428,7 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 
 		case "score":
 			// TypeScript extracts first element of score array (lines 66-69)
-			var scoreReportObj []map[string]interface{}
+			var scoreReportObj []map[string]any
 			if err := json.Unmarshal(stageReport, &scoreReportObj); err == nil && len(scoreReportObj) > 0 {
 				grade = scoreReportObj[0]
 			}
@@ -439,14 +443,14 @@ func (s *service) PostGradingProcessing(ctx context.Context, payload json.RawMes
 
 	// Handle score details - TypeScript lines 75-77
 	if grade != nil && report.PipelineResults.ScoreReports != nil {
-		var scoreReportsObj interface{}
+		var scoreReportsObj any
 		if err := json.Unmarshal(report.PipelineResults.ScoreReports, &scoreReportsObj); err == nil {
 			grade["details"] = scoreReportsObj
 		}
 	}
 
 	// Update the report entry with censored data (lines 78-89)
-	update := map[string]interface{}{
+	update := map[string]any{
 		"id":               report.ID,
 		"sanitizedReports": censoredReports,
 		"grade":            grade,
@@ -897,7 +901,7 @@ func (s *service) GenerateGradesExcel(ctx context.Context, assignmentConfigID in
 
 		// Build subgrade score map for this submission
 		submissionSubgrades := make(map[string]float64)
-		var scoreValue interface{} = "N/A"
+		var scoreValue any = "N/A"
 
 		if len(submission.Reports) > 0 && submission.Reports[0].Grade != nil {
 			grade := submission.Reports[0].Grade
@@ -959,4 +963,31 @@ func (s *service) GenerateGradesExcel(ctx context.Context, assignmentConfigID in
 		"subgradeColumns", len(subgradeOrder))
 
 	return f, nil
+}
+
+func (s *service) StoreSubmission(ctx context.Context, userID, assignmentConfigID int, file *multipart.FileHeader, cookie *http.Cookie) error {
+	src, err := file.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	storedName := fmt.Sprintf("%s/submitted/%d_%d_%s", s.config.SharedMountPath, time.Now().Unix(), userID, file.Filename)
+	defer src.Close()
+	dst, err := os.Create(storedName)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("failed to copy file: %w", err)
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, src); err != nil {
+		return fmt.Errorf("failed to hash file: %w", err)
+	}
+	submissionID, err := s.repository.CreateSubmission(ctx, userID, assignmentConfigID, storedName, file.Filename, file.Size, fmt.Sprintf("%x", h.Sum(nil)), cookie)
+	if err != nil {
+		return fmt.Errorf("failed to create submission: %w", err)
+	}
+	slog.Info("submission created for user", "userID", userID, "submissionID", submissionID)
+	return nil
 }

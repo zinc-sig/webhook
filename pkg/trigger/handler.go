@@ -87,6 +87,22 @@ func GradingTask(s *service) echo.HandlerFunc {
 	}
 }
 
+func ValidateConfig(s *service) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		var req struct {
+			ConfigYAML string `json:"yaml"`
+		}
+		if err := c.Bind(&req); err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid request body", Message: err.Error()})
+		}
+		resp, err := s.cache.ValidateConfig(c.Request().Context(), req.ConfigYAML)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to validate config", Message: err.Error()})
+		}
+		return c.JSON(http.StatusOK, resp)
+	}
+}
+
 func UpdateGraderQueues(s *service) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var req struct {
@@ -161,6 +177,32 @@ func DownloadSubmissions(s *service) echo.HandlerFunc {
 
 		// Write zip to response atomically
 		return c.Blob(http.StatusOK, "application/octet-stream", zipBuffer.Bytes())
+	}
+}
+
+func StoreSubmission(s *service) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		session, err := c.Request().Cookie("appSession")
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid session", Message: err.Error()})
+		}
+		assignmentConfigID, err := strconv.Atoi(c.FormValue("assignmentConfigId"))
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid assignmentConfigId", Message: err.Error()})
+		}
+		userID, err := strconv.Atoi(c.FormValue("userId"))
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid userId", Message: err.Error()})
+		}
+		submittedFile, err := c.FormFile("files")
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, api.ErrorResponse{Error: "invalid file", Message: err.Error()})
+		}
+		err = s.StoreSubmission(c.Request().Context(), userID, assignmentConfigID, submittedFile, session)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, api.ErrorResponse{Error: "failed to store submission", Message: err.Error()})
+		}
+		return nil
 	}
 }
 

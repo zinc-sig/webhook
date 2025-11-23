@@ -36,30 +36,23 @@ type Repository interface {
 	GetStudentUserIds(ctx context.Context, itscIDs []string) ([]int, error)
 	CreateSemesterIfNotExist(ctx context.Context, id int) error
 	GetStudentCourseEnrollmentMap(courseCode string) (*EnrollmentMap, error)
-	UpdateReportEntry(ctx context.Context, report map[string]interface{}) error
+	UpdateReportEntry(ctx context.Context, report map[string]any) error
 	GetGradingSubmissions(ctx context.Context, assignmentConfigID int) (*Assignment, error)
 	GetLatestOrSelectedSubmissions(ctx context.Context, assignmentConfigID int, selectedSubmissionIDs []int) ([]Submission, error)
 	ExtractZip(submissionID int, storedName string) error
+	CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string, cookie *http.Cookie) (int, error)
 	GetGradingPolicy(ctx context.Context, assignmentConfigID int, userID int) (bool, bool, error)
-	GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response interface{}) error
-	GetSubmissionByID(ctx context.Context, submissionID int, response interface{}) error
+	GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response any) error
+	GetSubmissionByID(ctx context.Context, submissionID int, response any) error
 	GetSubmissionFilePath(storedName string) string
-	GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response interface{}) error
-}
-
-type AuthTransport struct {
-	AdminSecret string
-}
-
-func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Add("X-Hasura-Admin-Secret", t.AdminSecret)
-	return http.DefaultTransport.RoundTrip(req)
+	GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response any) error
 }
 
 type repository struct {
 	sharedMountPath string
 	client          *graphql.Client
 	isoConfig       EnrollmentServiceConfig
+	adminSecret     string
 }
 
 type Params struct {
@@ -68,16 +61,25 @@ type Params struct {
 }
 
 func NewRepository(p Params) Repository {
-	httpclient := &http.Client{Transport: &AuthTransport{AdminSecret: p.Config.HasuraAdminSecret}}
 	client := graphql.NewClient(
 		fmt.Sprintf("%s/v1/graphql", p.Config.HasuraURL),
-		graphql.WithHTTPClient(httpclient),
 	)
 	return &repository{
 		client:          client,
 		isoConfig:       p.Config.IntegrationConfig,
 		sharedMountPath: p.Config.SharedMountPath,
+		adminSecret:     p.Config.HasuraAdminSecret,
 	}
+}
+
+func (r *repository) WithAdminSecret(req *graphql.Request) *graphql.Request {
+	req.Header.Add("X-Hasura-Admin-Secret", r.adminSecret)
+	return req
+}
+
+func (r *repository) WithCookie(req *graphql.Request, cookie *http.Cookie) *graphql.Request {
+	req.Header.Add("Cookie", cookie.String())
+	return req
 }
 
 var Module = fx.Module(

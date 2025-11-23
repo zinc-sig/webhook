@@ -67,6 +67,11 @@ func (m *MockCache) Subscribe(ctx context.Context) error {
 	return args.Error(0)
 }
 
+func (m *MockCache) ValidateConfig(ctx context.Context, configYAML string) (*cache.ConfigValidationResponse, error) {
+	args := m.Called(ctx, configYAML)
+	return args.Get(0).(*cache.ConfigValidationResponse), args.Error(0)
+}
+
 func (m *MockCache) RegisterHandler(jobType string, handler cache.MessageHandler) {
 	m.Called(jobType, handler)
 }
@@ -87,6 +92,11 @@ func (m *MockJWTVerifier) VerifyToken(ctx context.Context, tokenString string) (
 // MockRepository implements repository.Repository for testing
 type MockRepository struct {
 	mock.Mock
+}
+
+func (m *MockRepository) CreateSubmission(ctx context.Context, userID int, assignmentConfigID int, storedName, uploadName string, fileSize int64, checksum string, cookie *http.Cookie) (int, error) {
+	args := m.Called(ctx, userID, assignmentConfigID, storedName, uploadName, fileSize, checksum, cookie)
+	return args.Int(0), args.Error(1)
 }
 
 func (m *MockRepository) GetUser(ctx context.Context, itsc, name string) (*repository.User, error) {
@@ -156,7 +166,7 @@ func (m *MockRepository) GetStudentCourseEnrollmentMap(courseCode string) (*repo
 	return args.Get(0).(*repository.EnrollmentMap), args.Error(1)
 }
 
-func (m *MockRepository) UpdateReportEntry(ctx context.Context, report map[string]interface{}) error {
+func (m *MockRepository) UpdateReportEntry(ctx context.Context, report map[string]any) error {
 	args := m.Called(ctx, report)
 	return args.Error(0)
 }
@@ -187,12 +197,12 @@ func (m *MockRepository) GetGradingPolicy(ctx context.Context, assignmentConfigI
 	return args.Bool(0), args.Bool(1), args.Error(2)
 }
 
-func (m *MockRepository) GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response interface{}) error {
+func (m *MockRepository) GetSubmissionGrades(ctx context.Context, assignmentConfigID int, response any) error {
 	args := m.Called(ctx, assignmentConfigID, response)
 	return args.Error(0)
 }
 
-func (m *MockRepository) GetSubmissionByID(ctx context.Context, submissionID int, response interface{}) error {
+func (m *MockRepository) GetSubmissionByID(ctx context.Context, submissionID int, response any) error {
 	args := m.Called(ctx, submissionID, response)
 	return args.Error(0)
 }
@@ -202,7 +212,7 @@ func (m *MockRepository) GetSubmissionFilePath(storedName string) string {
 	return args.String(0)
 }
 
-func (m *MockRepository) GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response interface{}) error {
+func (m *MockRepository) GetAllSubmissionsForAssignmentConfig(ctx context.Context, assignmentConfigID int, response any) error {
 	args := m.Called(ctx, assignmentConfigID, response)
 	return args.Error(0)
 }
@@ -213,7 +223,7 @@ func TestIdentity(t *testing.T) {
 		request        IdentityRequest
 		setupMocks     func(*MockCache, *MockJWTVerifier, *MockRepository)
 		expectedStatus int
-		expectedBody   interface{}
+		expectedBody   any
 	}{
 		{
 			name: "successful admin user authentication",
@@ -260,7 +270,7 @@ func TestIdentity(t *testing.T) {
 				userRepo.On("GetUser", mock.Anything, "admin", "Admin User").Return(user, nil)
 			},
 			expectedStatus: http.StatusOK,
-			expectedBody: map[string]interface{}{
+			expectedBody: map[string]any{
 				"X-Hasura-User-Id": "admin",
 				"X-Hasura-Role":    "admin",
 			},
@@ -313,7 +323,7 @@ func TestIdentity(t *testing.T) {
 				userRepo.On("GetUser", mock.Anything, "user", "Regular User").Return(user, nil)
 			},
 			expectedStatus: http.StatusOK,
-			expectedBody: map[string]interface{}{
+			expectedBody: map[string]any{
 				"X-Hasura-User-Id":         "user",
 				"X-Hasura-Role":            "user",
 				"X-Hasura-Allowed-Courses": "{101,102}",
@@ -332,7 +342,7 @@ func TestIdentity(t *testing.T) {
 				// No mocks needed - should fail on cookie parsing
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedBody: map[string]interface{}{
+			expectedBody: map[string]any{
 				"error":   "Unauthorized",
 				"message": "could not find request session with auth credentials: http: named cookie not present",
 			},
@@ -350,7 +360,7 @@ func TestIdentity(t *testing.T) {
 				cache.On("Read", mock.Anything, mock.Anything).Return(nil, errors.New("key not found"))
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedBody: map[string]interface{}{
+			expectedBody: map[string]any{
 				"error":   "Unauthorized",
 				"message": "could not find request session with auth credentials: key not found",
 			},
@@ -378,7 +388,7 @@ func TestIdentity(t *testing.T) {
 				jwtVerifier.On("VerifyToken", mock.Anything, "invalid-token").Return(nil, errors.New("invalid token"))
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedBody: map[string]interface{}{
+			expectedBody: map[string]any{
 				"error":   "Unauthorized",
 				"message": "failed to verify token: invalid token",
 			},
@@ -416,7 +426,7 @@ func TestIdentity(t *testing.T) {
 				userRepo.On("GetUser", mock.Anything, "user", "Test User").Return(nil, errors.New("database error"))
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedBody: map[string]interface{}{
+			expectedBody: map[string]any{
 				"error":   "Unauthorized",
 				"message": "failed to get user from database: database error",
 			},
@@ -459,11 +469,11 @@ func TestIdentity(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, rec.Code)
 
 			// Check response body
-			var response map[string]interface{}
+			var response map[string]any
 			json.Unmarshal(rec.Body.Bytes(), &response)
 
 			// Compare expected fields (ignore timestamp and optional fields)
-			for key, expectedValue := range tt.expectedBody.(map[string]interface{}) {
+			for key, expectedValue := range tt.expectedBody.(map[string]any) {
 				if key != "X-Hasura-Requested-At" {
 					actualValue, exists := response[key]
 					if expectedValue == "" && !exists {

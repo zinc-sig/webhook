@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 	"go.uber.org/fx"
 )
 
@@ -25,6 +26,16 @@ type DoneGradingPayload struct {
 		ID           int `json:"id"`
 		SubmissionID int `json:"submission_id"`
 	} `json:"reports"`
+}
+
+type ConfigValidationRequest struct {
+	ID         string `json:"id"`
+	ConfigYAML string `json:"config_yaml"`
+}
+
+type ConfigValidationResponse struct {
+	ID          string  `json:"id"`
+	ConfigError *string `json:"configError"`
 }
 
 func (s *service) processMessage(ctx context.Context, queue, rawMessage string) {
@@ -57,12 +68,14 @@ type Service interface {
 	Llen(ctx context.Context, channel string) (int64, error)
 	LoadBalanceGraderPublish(ctx context.Context, message []byte, njobs int) error
 	LoadBalanceGraderDequeue(ctx context.Context, channel string, njobs int) error
+	ValidateConfig(ctx context.Context, configYAML string) (*ConfigValidationResponse, error)
 	Subscribe(ctx context.Context) error
 	RegisterHandler(jobType string, handler MessageHandler)
 }
 
 type service struct {
 	client   *redis.Client
+	debug    bool
 	locker   sync.Mutex
 	handlers map[string]MessageHandler
 }
@@ -70,6 +83,7 @@ type service struct {
 type ServiceParams struct {
 	fx.In
 	Config *Config
+	Debug  bool `name:"debug"`
 }
 
 func NewService(p ServiceParams) Service {
@@ -80,6 +94,7 @@ func NewService(p ServiceParams) Service {
 	})
 	return &service{
 		client:   client,
+		debug:    p.Debug,
 		handlers: make(map[string]MessageHandler),
 	}
 }
@@ -248,6 +263,59 @@ func (s *service) Subscribe(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (s *service) ValidateConfig(ctx context.Context, configYAML string) (*ConfigValidationResponse, error) {
+	id := uuid.New()
+
+	// Create the validation request
+	validationReq := ConfigValidationRequest{
+		ID:         id.String(),
+		ConfigYAML: configYAML,
+	}
+
+	reqBytes, err := json.Marshal(validationReq)
+	if err != nil {
+		slog.Warn("Failed to marshal validation request", "error", err)
+		return nil, fmt.Errorf("failed to marshal validation request: %w", err)
+	}
+
+	// For debug mode, skip actual publishing and return a mock response
+	if s.debug {
+		slog.Info("Publishing config validation request", "request", validationReq)
+		return &ConfigValidationResponse{
+			ID:          id.String(),
+			ConfigError: nil,
+		}, nil
+	}
+
+	// Publish the validation request to the validateConfig channel
+	if err := s.client.Publish(ctx, "validateConfig", reqBytes).Err(); err != nil {
+		return nil, err
+	}
+	subscription := s.client.Subscribe(ctx, "configValidated")
+	defer subscription.Close()
+
+	ch := subscription.Channel()
+	var result ConfigValidationResponse
+	for msg := range ch {
+		var payload ConfigValidationResponse
+
+		if err := json.Unmarshal([]byte(msg.Payload), &payload); err != nil {
+			slog.Warn("Error parsing message:", "err", err)
+			continue // Skip malformed messages
+		}
+
+		if payload.ID == id.String() {
+			if err := subscription.Unsubscribe(ctx, "configValidated"); err != nil {
+				slog.Warn("Error unsubscribing from topic:", "err", err)
+				return nil, err
+			}
+			result = payload
+			break
+		}
+	}
+	return &result, nil
 }
 
 func (s *service) RegisterHandler(jobType string, handler MessageHandler) {

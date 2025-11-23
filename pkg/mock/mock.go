@@ -25,7 +25,7 @@ type MockGraphQLClient struct {
 }
 
 // Run is a mock method for the Run method
-func (m *MockGraphQLClient) Run(ctx context.Context, req *graphql.Request, resp interface{}) error {
+func (m *MockGraphQLClient) Run(ctx context.Context, req *graphql.Request, resp any) error {
 	args := m.Called(ctx, req, resp)
 	return args.Error(0)
 }
@@ -101,7 +101,7 @@ func (m *MockRepository) GetStudentCourseEnrollmentMap(courseCode string) (*repo
 	return args.Get(0).(*repository.EnrollmentMap), args.Error(1)
 }
 
-func (m *MockRepository) UpdateReportEntry(ctx context.Context, report map[string]interface{}) error {
+func (m *MockRepository) UpdateReportEntry(ctx context.Context, report map[string]any) error {
 	args := m.Called(ctx, report)
 	return args.Error(0)
 }

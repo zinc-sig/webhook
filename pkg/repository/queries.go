@@ -141,6 +141,14 @@ query getGradingPolicy($id: bigint!, $userId: bigint!) {
   }
 }`
 
+const createSubmission = `
+mutation addSubmissionEntry($submission: submissions_insert_input!) {
+  createSubmission(
+    object: $submission
+  ){ id }
+}
+`
+
 const getGradingSubmissions = `
 query getGradingSubmissions($assignmentConfigId: bigint!) {
   assignmentConfig(id: $assignmentConfigId) {

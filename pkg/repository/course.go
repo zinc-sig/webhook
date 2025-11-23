@@ -105,7 +105,7 @@ func (r *repository) GetStudentCourseEnrollmentMap(courseCode string) (*Enrollme
 }
 
 func (r *repository) AddCourse(ctx context.Context, code string, semesterID int, title string) (int, error) {
-	req := graphql.NewRequest(addCourse)
+	req := r.WithAdminSecret(graphql.NewRequest(addCourse))
 	req.Var("code", code)
 	req.Var("semesterId", semesterID)
 	req.Var("name", title)
@@ -124,12 +124,12 @@ func (r *repository) AddCourse(ctx context.Context, code string, semesterID int,
 }
 
 func (r *repository) AddSections(ctx context.Context, courseID int, sectionNames []string) (map[string]int, error) {
-	var sections []map[string]interface{}
+	var sections []map[string]any
 	for _, name := range sectionNames {
-		sections = append(sections, map[string]interface{}{"name": name, "course_id": courseID})
+		sections = append(sections, map[string]any{"name": name, "course_id": courseID})
 	}
 
-	req := graphql.NewRequest(addSections)
+	req := r.WithAdminSecret(graphql.NewRequest(addSections))
 	req.Var("sections", sections)
 
 	var resp struct {
@@ -156,15 +156,15 @@ func (r *repository) AddSections(ctx context.Context, courseID int, sectionNames
 }
 
 func (r *repository) AddStudentsToCourseSection(ctx context.Context, studentUserIDs []int, sectionID int) error {
-	var users []map[string]interface{}
+	var users []map[string]any
 	for _, userID := range studentUserIDs {
-		users = append(users, map[string]interface{}{"user_id": userID, "section_id": sectionID})
+		users = append(users, map[string]any{"user_id": userID, "section_id": sectionID})
 	}
 
-	req := graphql.NewRequest(addStudentsToCourseSection)
+	req := r.WithAdminSecret(graphql.NewRequest(addStudentsToCourseSection))
 	req.Var("users", users)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
 		slog.Error("error adding students to course section", "response", string(m))
@@ -174,15 +174,15 @@ func (r *repository) AddStudentsToCourseSection(ctx context.Context, studentUser
 }
 
 func (r *repository) AddStudentsToCourse(ctx context.Context, studentUserIDs []int, courseID int) error {
-	var users []map[string]interface{}
+	var users []map[string]any
 	for _, userID := range studentUserIDs {
-		users = append(users, map[string]interface{}{"user_id": userID, "course_id": courseID, "permission": 1})
+		users = append(users, map[string]any{"user_id": userID, "course_id": courseID, "permission": 1})
 	}
 
-	req := graphql.NewRequest(addStudentsToCourse)
+	req := r.WithAdminSecret(graphql.NewRequest(addStudentsToCourse))
 	req.Var("users", users)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
 		slog.Error("error adding students to course", "response", string(m))
@@ -192,10 +192,10 @@ func (r *repository) AddStudentsToCourse(ctx context.Context, studentUserIDs []i
 }
 
 func (r *repository) RemoveStudentsFromSection(ctx context.Context, courseID int) error {
-	req := graphql.NewRequest(removeStudentsFromSection)
+	req := r.WithAdminSecret(graphql.NewRequest(removeStudentsFromSection))
 	req.Var("courseId", courseID)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
 		slog.Error("error removing students from section", "response", string(m))
@@ -205,10 +205,10 @@ func (r *repository) RemoveStudentsFromSection(ctx context.Context, courseID int
 }
 
 func (r *repository) RemoveStudentsFromCourse(ctx context.Context, courseID int) error {
-	req := graphql.NewRequest(removeStudentsFromCourse)
+	req := r.WithAdminSecret(graphql.NewRequest(removeStudentsFromCourse))
 	req.Var("courseId", courseID)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
 		slog.Error("error removing students from course", "response", string(m))
@@ -219,12 +219,12 @@ func (r *repository) RemoveStudentsFromCourse(ctx context.Context, courseID int)
 
 func (r *repository) CreateSemesterIfNotExist(ctx context.Context, id int) error {
 	name, year := getSemesterNameAndYear(fmt.Sprintf("%d", id))
-	req := graphql.NewRequest(createSemester)
+	req := r.WithAdminSecret(graphql.NewRequest(createSemester))
 	req.Var("id", id)
 	req.Var("name", name)
 	req.Var("year", year)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := r.client.Run(ctx, req, &resp); err != nil {
 		m, _ := json.Marshal(resp)
 		slog.Error("error creating semester", "response", string(m))

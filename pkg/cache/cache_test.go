@@ -34,6 +34,12 @@ func TestLlen(t *testing.T) {
 		app := fxtest.New(
 			t,
 			mock.ProvideMockCacheService(t),
+			fx.Supply(
+				fx.Annotated{
+					Name:   "debug",
+					Target: false,
+				},
+			),
 			fx.Invoke(
 				func(cache cache.Service) {
 					err := cache.Publish(t.Context(), "test", []byte("hello1"))
@@ -60,6 +66,12 @@ func TestLoadBalancePublish(t *testing.T) {
 		app := fxtest.New(
 			t,
 			mock.ProvideMockCacheService(t),
+			fx.Supply(
+				fx.Annotated{
+					Name:   "debug",
+					Target: false,
+				},
+			),
 			fx.Invoke(
 				func(s cache.Service, client *redis.Client) {
 					jobs := []int{1, 3, 5, 1, 10, 1, 3}
@@ -94,6 +106,12 @@ func TestLoadBalancePublish(t *testing.T) {
 		app := fxtest.New(
 			t,
 			mock.ProvideMockCacheService(t),
+			fx.Supply(
+				fx.Annotated{
+					Name:   "debug",
+					Target: false,
+				},
+			),
 			fx.Invoke(
 				func(s cache.Service, client *redis.Client) {
 					var wg sync.WaitGroup
@@ -139,6 +157,12 @@ func TestLoadBalanceDequeue(t *testing.T) {
 		app := fxtest.New(
 			t,
 			mock.ProvideMockCacheService(t),
+			fx.Supply(
+				fx.Annotated{
+					Name:   "debug",
+					Target: false,
+				},
+			),
 			fx.Invoke(
 				func(s cache.Service, client *redis.Client) {
 					channels := []string{"channel1", "channel2", "channel3"}
@@ -186,6 +210,12 @@ func TestLoadBalance(t *testing.T) {
 		app := fxtest.New(
 			t,
 			mock.ProvideMockCacheService(t),
+			fx.Supply(
+				fx.Annotated{
+					Name:   "debug",
+					Target: false,
+				},
+			),
 			fx.Invoke(
 				func(s cache.Service, client *redis.Client) {
 					channels := []string{"channel1", "channel2", "channel3"}
@@ -290,6 +320,10 @@ func TestLoadBalanceIntegration(t *testing.T) {
 			fx.Supply(
 				&cache.Config{
 					DSN: fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT")),
+				},
+				fx.Annotated{
+					Name:   "debug",
+					Target: false,
 				},
 			),
 			fx.Invoke(
@@ -405,7 +439,7 @@ func TestLoadBalanceIntegration(t *testing.T) {
 
 func buildGradingJobPayload(jobType string, gradingPayloads []trigger.GradingPayload, assignmentConfigID int, isTest bool, initiatedBy *int) ([]byte, error) {
 	// Build the payload map
-	payloadMap := map[string]interface{}{
+	payloadMap := map[string]any{
 		"submissions":          gradingPayloads,
 		"assignment_config_id": assignmentConfigID,
 		"isTest":               isTest,
@@ -426,7 +460,7 @@ func buildGradingJobPayload(jobType string, gradingPayloads []trigger.GradingPay
 	}
 
 	// Create the job wrapper
-	job, err := json.Marshal(map[string]interface{}{
+	job, err := json.Marshal(map[string]any{
 		"job":     jobType,
 		"payload": string(payload),
 	})
